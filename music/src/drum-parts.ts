@@ -36,24 +36,6 @@ export interface DrumPartNotes {
 }
 
 /**
- * Find the Python interpreter, preferring the audio-tools venv.
- */
-async function findPython(): Promise<string> {
-  const { existsSync: exists } = await import('node:fs')
-  const { join: joinPath } = await import('node:path')
-
-  const venvPython = joinPath(
-    process.env.HOME ?? '',
-    'audio-tools-venv',
-    'bin',
-    'python3'
-  )
-  if (exists(venvPython)) return venvPython
-
-  return 'python3'
-}
-
-/**
  * Pure ffmpeg implementation of isolateDrumParts.
  * Uses ffmpeg audio filters for frequency-domain separation:
  * - Kick: lowpass at 250 Hz
@@ -105,130 +87,16 @@ export async function isolateDrumPartsTS(
 }
 
 /**
- * Python/scipy fallback for isolateDrumParts.
- */
-export async function isolateDrumPartsPython(
-  drumsFile: string,
-  outputDir: string,
-  options?: { sr?: number }
-): Promise<DrumParts> {
-  await mkdir(outputDir, { recursive: true })
-
-  const sr = options?.sr ?? 44100
-  const python = await findPython()
-  const base = basename(drumsFile, extname(drumsFile))
-
-  const kickPath = join(outputDir, `${base}_kick.wav`)
-  const snarePath = join(outputDir, `${base}_snare.wav`)
-  const hihatPath = join(outputDir, `${base}_hihat.wav`)
-
-  const script = `
-import numpy as np
-from scipy.io import wavfile
-from scipy.signal import butter, sosfilt
-import subprocess, sys, tempfile, os
-
-input_file = sys.argv[1]
-output_dir = sys.argv[2]
-sr_target = int(sys.argv[3])
-kick_out = sys.argv[4]
-snare_out = sys.argv[5]
-hihat_out = sys.argv[6]
-
-# Convert to wav first using ffmpeg for broad format support
-tmp_wav = os.path.join(tempfile.gettempdir(), 'drum_parts_input.wav')
-subprocess.run(
-    ['ffmpeg', '-y', '-i', input_file, '-ar', str(sr_target), '-ac', '1', tmp_wav],
-    capture_output=True, check=True
-)
-
-sr, data = wavfile.read(tmp_wav)
-
-# Normalize to float
-if data.dtype == np.int16:
-    data = data.astype(np.float32) / 32768.0
-elif data.dtype == np.int32:
-    data = data.astype(np.float32) / 2147483648.0
-elif data.dtype == np.uint8:
-    data = (data.astype(np.float32) - 128.0) / 128.0
-
-# Make mono if needed
-if len(data.shape) > 1:
-    data = np.mean(data, axis=1)
-
-def butter_filter(data, sr, low=None, high=None, order=5):
-    if low is not None and high is not None:
-        sos = butter(order, [low, high], btype='band', fs=sr, output='sos')
-    elif low is not None:
-        sos = butter(order, low, btype='high', fs=sr, output='sos')
-    elif high is not None:
-        sos = butter(order, high, btype='low', fs=sr, output='sos')
-    else:
-        return data
-    return sosfilt(sos, data)
-
-# Kick: lowpass at 250 Hz
-kick = butter_filter(data, sr, high=250)
-
-# Snare: bandpass 200-5000 Hz, then subtract lowpass 300 Hz to remove kick bleed
-snare_full = butter_filter(data, sr, low=200, high=5000)
-snare_kick_bleed = butter_filter(snare_full, sr, high=300)
-snare = snare_full - snare_kick_bleed
-
-# Hihat: bandpass 3000-16000 Hz
-hihat = butter_filter(data, sr, low=3000, high=min(16000, sr // 2 - 1))
-
-def save_wav(path, audio, sr):
-    # Normalize to prevent clipping
-    peak = np.max(np.abs(audio))
-    if peak > 0:
-        audio = audio / peak * 0.95
-    wavfile.write(path, sr, (audio * 32767).astype(np.int16))
-
-save_wav(kick_out, kick, sr)
-save_wav(snare_out, snare, sr)
-save_wav(hihat_out, hihat, sr)
-
-# Clean up
-os.remove(tmp_wav)
-
-print('ok')
-`
-
-  await exec(python, [
-    '-c', script,
-    drumsFile, outputDir, String(sr),
-    kickPath, snarePath, hihatPath,
-  ], { timeout: 120_000 })
-
-  return {
-    kick: kickPath,
-    snare: snarePath,
-    hihat: hihatPath,
-  }
-}
-
-/**
  * Isolate drum parts (kick, snare, hihat) from a drum audio file.
  *
- * Tries the pure ffmpeg implementation first, falls back to Python/scipy.
+ * Uses ffmpeg audio filters for frequency-domain separation.
  *
  * Frequency ranges:
  * - Kick: lowpass at 250 Hz
  * - Snare: bandpass 200-5000 Hz
  * - Hihat: bandpass 3000-16000 Hz
  */
-export async function isolateDrumParts(
-  drumsFile: string,
-  outputDir: string,
-  options?: { sr?: number }
-): Promise<DrumParts> {
-  try {
-    return await isolateDrumPartsTS(drumsFile, outputDir, options)
-  } catch {
-    return isolateDrumPartsPython(drumsFile, outputDir, options)
-  }
-}
+export const isolateDrumParts = isolateDrumPartsTS
 
 /**
  * Convert onset times (in seconds) to Ableton-ready note arrays

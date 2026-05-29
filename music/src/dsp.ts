@@ -136,6 +136,78 @@ export function powerSpectrum(fftResult: Float64Array): Float64Array {
 }
 
 // ---------------------------------------------------------------------------
+// Inverse FFT
+// ---------------------------------------------------------------------------
+
+/**
+ * Inverse FFT — converts frequency domain back to time domain.
+ * Input: Float64Array of interleaved [re, im, re, im, ...]
+ * Output: Float64Array of real values (length = input.length / 2)
+ */
+export function ifft(spectrum: Float64Array): Float64Array {
+  const N = spectrum.length / 2
+
+  // Conjugate the input (negate imaginary parts)
+  const conjugated = new Float64Array(spectrum.length)
+  for (let i = 0; i < N; i++) {
+    conjugated[2 * i] = spectrum[2 * i]
+    conjugated[2 * i + 1] = -spectrum[2 * i + 1]
+  }
+
+  // Forward FFT of conjugated signal
+  // We reuse the FFT butterfly logic directly since fft() zero-pads,
+  // but here N is already a power of 2 and we have complex input.
+  const bits = Math.log2(N)
+
+  // Bit-reversal permutation
+  const out = new Float64Array(2 * N)
+  for (let i = 0; i < N; i++) {
+    const j = bitReverse(i, bits)
+    out[2 * j] = conjugated[2 * i]
+    out[2 * j + 1] = conjugated[2 * i + 1]
+  }
+
+  // Cooley-Tukey iterative radix-2 DIT
+  for (let size = 2; size <= N; size *= 2) {
+    const halfSize = size / 2
+    const angleStep = -2 * Math.PI / size
+
+    for (let i = 0; i < N; i += size) {
+      for (let k = 0; k < halfSize; k++) {
+        const angle = angleStep * k
+        const twRe = Math.cos(angle)
+        const twIm = Math.sin(angle)
+
+        const evenIdx = 2 * (i + k)
+        const oddIdx = 2 * (i + k + halfSize)
+
+        const eRe = out[evenIdx]
+        const eIm = out[evenIdx + 1]
+
+        const oRe = out[oddIdx]
+        const oIm = out[oddIdx + 1]
+
+        const tRe = twRe * oRe - twIm * oIm
+        const tIm = twRe * oIm + twIm * oRe
+
+        out[evenIdx] = eRe + tRe
+        out[evenIdx + 1] = eIm + tIm
+        out[oddIdx] = eRe - tRe
+        out[oddIdx + 1] = eIm - tIm
+      }
+    }
+  }
+
+  // Conjugate and divide by N to get IFFT result, extract real parts
+  const result = new Float64Array(N)
+  for (let i = 0; i < N; i++) {
+    result[i] = out[2 * i] / N
+  }
+
+  return result
+}
+
+// ---------------------------------------------------------------------------
 // STFT
 // ---------------------------------------------------------------------------
 
@@ -186,6 +258,128 @@ export function stft(signal: Float64Array, options?: STFTOptions): Float64Array[
   }
 
   return frames
+}
+
+/**
+ * Complex STFT — returns interleaved [re, im] pairs per bin, per frame.
+ * Needed for ISTFT reconstruction (magnitude alone loses phase info).
+ * Each frame has (nFft/2 + 1) * 2 values: [re0, im0, re1, im1, ...]
+ */
+export function stftComplex(signal: Float64Array, options?: STFTOptions): Float64Array[] {
+  const nFft = nextPow2(options?.nFft ?? 4096)
+  const hopLength = options?.hopLength ?? 512
+  const windowType = options?.window ?? 'hann'
+
+  const win =
+    windowType === 'hann'
+      ? hannWindow(nFft)
+      : windowType === 'hamming'
+        ? hammingWindow(nFft)
+        : null
+
+  const numBins = nFft / 2 + 1
+  const numFrames = Math.max(0, Math.floor((signal.length - nFft) / hopLength) + 1)
+  const frames: Float64Array[] = []
+
+  const frame = new Float64Array(nFft)
+
+  for (let t = 0; t < numFrames; t++) {
+    const start = t * hopLength
+
+    for (let i = 0; i < nFft; i++) {
+      const idx = start + i
+      const sample = idx < signal.length ? signal[idx] : 0
+      frame[i] = win ? sample * win[i] : sample
+    }
+
+    const fftResult = fft(frame)
+
+    // Extract only the first numBins complex pairs (positive frequencies)
+    const complexFrame = new Float64Array(numBins * 2)
+    for (let i = 0; i < numBins; i++) {
+      complexFrame[2 * i] = fftResult[2 * i]
+      complexFrame[2 * i + 1] = fftResult[2 * i + 1]
+    }
+    frames.push(complexFrame)
+  }
+
+  return frames
+}
+
+/**
+ * Inverse Short-Time Fourier Transform.
+ * Reconstructs a time-domain signal from STFT frames using overlap-add.
+ *
+ * @param frames - Array of complex STFT frames (each is [re, im, re, im, ...] interleaved)
+ * @param options - nFft, hopLength, window settings (must match the forward STFT).
+ *                  `length` optionally specifies the desired output length.
+ * @returns Reconstructed time-domain signal
+ */
+export function istft(frames: Float64Array[], options?: STFTOptions & { length?: number }): Float64Array {
+  const nFft = nextPow2(options?.nFft ?? 4096)
+  const hopLength = options?.hopLength ?? 512
+  const windowType = options?.window ?? 'hann'
+
+  const win =
+    windowType === 'hann'
+      ? hannWindow(nFft)
+      : windowType === 'hamming'
+        ? hammingWindow(nFft)
+        : null
+
+  const numFrames = frames.length
+  const expectedLength = options?.length ?? (nFft + (numFrames - 1) * hopLength)
+
+  const output = new Float64Array(expectedLength)
+  const windowSum = new Float64Array(expectedLength)
+
+  for (let t = 0; t < numFrames; t++) {
+    const complexFrame = frames[t]
+    const numBins = complexFrame.length / 2
+
+    // Reconstruct full-length complex spectrum (mirror conjugate for negative frequencies)
+    const fullSpectrum = new Float64Array(2 * nFft)
+    for (let i = 0; i < numBins; i++) {
+      fullSpectrum[2 * i] = complexFrame[2 * i]
+      fullSpectrum[2 * i + 1] = complexFrame[2 * i + 1]
+    }
+    // Mirror: bin k maps to bin N-k with conjugated imaginary part
+    for (let i = 1; i < nFft - numBins + 1; i++) {
+      const srcIdx = numBins - 1 - i
+      if (srcIdx > 0) {
+        fullSpectrum[2 * (nFft - srcIdx)] = complexFrame[2 * srcIdx]
+        fullSpectrum[2 * (nFft - srcIdx) + 1] = -complexFrame[2 * srcIdx + 1]
+      }
+    }
+    // Fill negative frequency bins by conjugate symmetry
+    for (let i = numBins; i < nFft; i++) {
+      const mirror = nFft - i
+      fullSpectrum[2 * i] = fullSpectrum[2 * mirror]
+      fullSpectrum[2 * i + 1] = -fullSpectrum[2 * mirror + 1]
+    }
+
+    // IFFT to get time-domain segment
+    const timeDomain = ifft(fullSpectrum)
+
+    // Apply synthesis window and overlap-add
+    const start = t * hopLength
+    for (let i = 0; i < nFft; i++) {
+      const pos = start + i
+      if (pos >= expectedLength) break
+      const w = win ? win[i] : 1
+      output[pos] += timeDomain[i] * w
+      windowSum[pos] += w * w
+    }
+  }
+
+  // Normalize by the sum of squared windows (COLA condition)
+  for (let i = 0; i < expectedLength; i++) {
+    if (windowSum[i] > 1e-8) {
+      output[i] /= windowSum[i]
+    }
+  }
+
+  return output
 }
 
 /**

@@ -11,8 +11,6 @@ export {
 
 export {
   separate,
-  findDemucs,
-  checkBackends,
   type SeparateOptions,
   type StemResult,
   type StemModel,
@@ -42,7 +40,6 @@ export {
 export {
   analyzeTimbre,
   analyzeTimbreTS,
-  analyzeTimbrePython,
   type AudioAnalysisResult,
   type SpectralAnalysis,
   type TransientAnalysis,
@@ -53,7 +50,6 @@ export {
   suggestMacroValues,
   spectralCorrectionCurve,
   spectralCorrectionCurveTS,
-  spectralCorrectionCurvePython,
   type TimbreComparison,
   type EQRecommendation,
   type EQBandRecommendation,
@@ -63,7 +59,6 @@ export {
 export {
   isolateDrumParts,
   isolateDrumPartsTS,
-  isolateDrumPartsPython,
   extractDrumMidi,
   drumNotesToBatches,
   type DrumParts,
@@ -74,7 +69,6 @@ export {
 export {
   extractDrumFeatures,
   extractDrumFeaturesTS,
-  extractDrumFeaturesPython,
   drumFeatureDistance,
   findClosestSample,
   type DrumFeatures,
@@ -84,10 +78,8 @@ export {
 export {
   timbreSimilarity,
   timbreSimilarityTS,
-  timbreSimilarityPython,
   mfccDistance,
   mfccDistanceTS,
-  mfccDistancePython,
   type SimilarityResult,
   type MfccDistanceResult,
 } from './similarity.js'
@@ -101,9 +93,12 @@ export {
 
 export {
   fft,
+  ifft,
   magnitudeSpectrum,
   powerSpectrum,
   stft,
+  stftComplex,
+  istft,
   fftFrequencies,
   spectralCentroid,
   spectralBandwidth,
@@ -124,7 +119,6 @@ export {
 export {
   transcribePolyphonic,
   transcribePolyphonicTS,
-  transcribePolyphonicPython,
   type TranscriptionResult,
   type TranscribedNote,
   type TranscribeOptions,

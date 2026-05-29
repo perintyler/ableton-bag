@@ -1,5 +1,4 @@
 import { analyzeTimbre, type AudioAnalysisResult } from './analyze.js'
-import { exec } from './exec.js'
 import {
   loadAudio,
   stft,
@@ -138,7 +137,7 @@ export function suggestMacroValues(
  * Compare the timbral characteristics of two audio files and generate
  * EQ recommendations to make the source sound more like the target.
  *
- * Uses Python/librosa under the hood via analyzeTimbre.
+ * Uses pure TypeScript DSP via analyzeTimbre.
  */
 export interface SpectralCorrectionCurve {
   /** Center frequencies for each band (1/3 octave spacing) */
@@ -246,123 +245,23 @@ export async function spectralCorrectionCurveTS(
 }
 
 /**
- * Python/librosa fallback for spectralCorrectionCurve.
- */
-export async function spectralCorrectionCurvePython(
-  sourceFile: string,
-  targetFile: string,
-  options?: { python?: string }
-): Promise<SpectralCorrectionCurve> {
-  const python = options?.python ?? await findPython()
-
-  const script = `
-import librosa
-import numpy as np
-import json
-import sys
-
-source_file = sys.argv[1]
-target_file = sys.argv[2]
-
-y_src, sr = librosa.load(source_file, sr=44100, mono=True)
-y_tgt, _ = librosa.load(target_file, sr=44100, mono=True)
-
-D_src = np.abs(librosa.stft(y_src, n_fft=4096))
-D_tgt = np.abs(librosa.stft(y_tgt, n_fft=4096))
-avg_src = np.mean(D_src, axis=1)
-avg_tgt = np.mean(D_tgt, axis=1)
-freqs = librosa.fft_frequencies(sr=sr, n_fft=4096)
-
-third_octave = [31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
-                630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300,
-                8000, 10000, 12500, 16000, 20000]
-
-corrections = []
-for fc in third_octave:
-    lo = fc / (2 ** (1/6))
-    hi = fc * (2 ** (1/6))
-    mask = (freqs >= lo) & (freqs < hi)
-    src_mag = np.mean(avg_src[mask]) if np.any(mask) else 1e-10
-    tgt_mag = np.mean(avg_tgt[mask]) if np.any(mask) else 1e-10
-    src_mag = max(src_mag, 1e-10)
-    tgt_mag = max(tgt_mag, 1e-10)
-    corr = 20 * np.log10(tgt_mag / src_mag)
-    corr = float(np.clip(corr, -12, 12))
-    corrections.append(round(corr, 2))
-
-# 1/3 octave smoothing: 3-point moving average
-smoothed = []
-for i in range(len(corrections)):
-    lo_i = max(0, i - 1)
-    hi_i = min(len(corrections), i + 2)
-    smoothed.append(round(float(np.mean(corrections[lo_i:hi_i])), 2))
-
-result = {
-    "frequencies": third_octave,
-    "corrections_dB": corrections,
-    "smoothed_dB": smoothed
-}
-print(json.dumps(result))
-`
-
-  const { stdout } = await exec(python, ['-c', script, sourceFile, targetFile], {
-    timeout: 120_000,
-  })
-
-  const lines = stdout.trim().split('\n')
-  return JSON.parse(lines[lines.length - 1]) as SpectralCorrectionCurve
-}
-
-/**
  * Compute a detailed frequency-by-frequency correction curve between two audio files.
  * Returns 1/3 octave center frequencies with per-band correction values in dB.
  * Corrections are clamped to +/-12 dB to avoid extreme adjustments.
- *
- * Tries the pure TypeScript implementation first, falls back to Python/librosa.
  */
-export async function spectralCorrectionCurve(
-  sourceFile: string,
-  targetFile: string,
-  options?: { python?: string }
-): Promise<SpectralCorrectionCurve> {
-  try {
-    return await spectralCorrectionCurveTS(sourceFile, targetFile)
-  } catch {
-    return spectralCorrectionCurvePython(sourceFile, targetFile, options)
-  }
-}
-
-async function findPython(): Promise<string> {
-  const { existsSync } = await import('node:fs')
-  const { join } = await import('node:path')
-
-  const venvPython = join(
-    process.env.HOME ?? '',
-    'audio-tools-venv',
-    'bin',
-    'python3'
-  )
-  if (existsSync(venvPython)) return venvPython
-
-  const { requireCmd } = await import('./exec.js')
-  await requireCmd('python3')
-  return 'python3'
-}
+export const spectralCorrectionCurve = spectralCorrectionCurveTS
 
 /**
  * Compare the timbral characteristics of two audio files and generate
  * EQ recommendations to make the source sound more like the target.
- *
- * Uses Python/librosa under the hood via analyzeTimbre.
  */
 export async function compareTimbre(
   sourceFile: string,
   targetFile: string,
-  options?: { python?: string }
 ): Promise<TimbreComparison> {
   const [source, target] = await Promise.all([
-    analyzeTimbre(sourceFile, options),
-    analyzeTimbre(targetFile, options),
+    analyzeTimbre(sourceFile),
+    analyzeTimbre(targetFile),
   ])
 
   const bands = buildBandRecommendations(source, target)
