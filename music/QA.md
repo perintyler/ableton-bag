@@ -2,26 +2,27 @@
 
 ## Test Strategy
 
-### Pure TypeScript Modules (no Python required)
+All modules are pure TypeScript + ffmpeg + ONNX. No Python dependencies.
+
+### Pure TypeScript Modules (no external deps)
 These can be tested with vitest directly:
 - `midi.ts` — MIDI file generation, quantization, GM drum map
 - `eq-mapping.ts` — Hz to EQ Eight normalization, presets, filter types
 - `compare.ts` — `suggestMacroValues()`, `buildBandRecommendations()` (pure math)
-- `dsp.ts` — FFT, STFT, spectral features, MFCCs (once implemented)
+- `dsp.ts` — FFT, STFT, spectral features, MFCCs
 
-### Python-Dependent Modules (require audio-tools-venv)
-These need integration tests with Python available:
-- `analyze.ts` — spectral analysis via librosa
+### ONNX-Dependent Modules (require onnxruntime-node)
+- `analyze.ts` — spectral analysis
 - `similarity.ts` — MFCC comparison, DTW
 - `drum-features.ts` — DrumGAN 7-feature extraction
-- `drum-parts.ts` — frequency-based drum isolation
-- `stems.ts` — demucs stem separation
-- `transcribe.ts` — basic-pitch polyphonic transcription
+- `stems.ts` — demucs stem separation via ONNX
+- `transcribe.ts` — basic-pitch polyphonic transcription via ONNX
 
 ### FFmpeg-Dependent Modules
 Require ffmpeg installed:
 - `audio.ts` — filtering, frequency band isolation, format conversion
 - `onset.ts` — onset detection via energy analysis
+- `drum-parts.ts` — frequency-based drum isolation
 
 ## Running Tests
 
@@ -71,15 +72,14 @@ For integration tests, use these reference files:
 
 ## Known Limitations
 
-- Python-dependent modules require `~/audio-tools-venv` with librosa, scipy, etc.
-- stems.ts requires PyTorch (demucs) — slow, CPU-intensive
-- transcribe.ts requires basic-pitch with ONNX backend (BASIC_PITCH_FORCE_ONNX=1)
+- ONNX modules require `onnxruntime-node` and bundled model files
+- stems.ts (demucs ONNX) is CPU-intensive on long audio
 - Audio file tests need actual .wav files — not suitable for CI without fixtures
 
 ## Accuracy Standards
 
 - EQ frequency mapping: ±1% round-trip accuracy
 - MIDI quantization: exact to the grid resolution
-- Spectral analysis: ±5% compared to librosa reference values
-- MFCC: ±10% compared to librosa (different implementations may vary slightly)
+- Spectral analysis: ±5% of expected reference values
+- MFCC: ±10% tolerance (implementation-specific numerical differences)
 - Onset detection: within 1 grid unit of reference
