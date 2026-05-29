@@ -1,0 +1,32 @@
+{
+  "name": "@barry/music",
+  "version": "1.0.0",
+  "description": "Audio processing utilities for stem separation, frequency filtering, onset detection, and MIDI generation",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./midi": "./src/midi.ts",
+    "./audio": "./src/audio.ts",
+    "./stems": "./src/stems.ts",
+    "./analyze": "./src/analyze.ts",
+    "./compare": "./src/compare.ts",
+    "./drum-parts": "./src/drum-parts.ts",
+    "./drum-features": "./src/drum-features.ts",
+    "./similarity": "./src/similarity.ts",
+    "./eq-mapping": "./src/eq-mapping.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.0",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  }
+}
