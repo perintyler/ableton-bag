@@ -123,3 +123,8 @@ export {
   type TranscribedNote,
   type TranscribeOptions,
 } from './transcribe.js'
+
+export {
+  checkHealth,
+  type HealthCheckResult,
+} from './health.js'

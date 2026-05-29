@@ -15,7 +15,8 @@
     "./drum-features": "./src/drum-features.ts",
     "./similarity": "./src/similarity.ts",
     "./eq-mapping": "./src/eq-mapping.ts",
-    "./dsp": "./src/dsp.ts"
+    "./dsp": "./src/dsp.ts",
+    "./health": "./src/health.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
