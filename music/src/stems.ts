@@ -273,146 +273,116 @@ export async function separate(options: SeparateOptions): Promise<StemResult> {
   if (verbose) console.log('Input names:', session.inputNames)
   if (verbose) console.log('Output names:', session.outputNames)
 
-  // 3. Prepare the waveform tensor: [1, 2, paddedSamples]
-  // The htdemucs ONNX model internally reshapes to {1, 4, -1, segment_size}.
-  // The input sample count must be divisible by the model's segment alignment.
-  const SEGMENT_ALIGN = 343980
-  const paddedSamples = Math.ceil(numSamples / SEGMENT_ALIGN) * SEGMENT_ALIGN
+  // 3. Process in segments
+  // The htdemucs ONNX model expects segments of exactly SEGMENT_LENGTH samples (7.8s at 44100Hz).
+  // Process the audio in overlapping segments and crossfade to avoid boundary artifacts.
+  const SEGMENT_LENGTH = 343980  // model.segment * model.samplerate
+  const OVERLAP = Math.floor(SEGMENT_LENGTH * 0.25)  // 25% overlap for crossfading
+  const STEP = SEGMENT_LENGTH - OVERLAP
 
-  const waveformData = new Float32Array(2 * paddedSamples)
-  for (let i = 0; i < numSamples; i++) {
-    waveformData[i] = left[i]
-    waveformData[paddedSamples + i] = right[i]
-  }
-  // Remaining samples are zero-padded (Float32Array initializes to 0)
-  const waveformTensor = new ort.Tensor('float32', waveformData, [1, 2, paddedSamples])
+  const numSegments = Math.max(1, Math.ceil((numSamples - OVERLAP) / STEP))
+  if (verbose) console.log(`Audio: ${numSamples} samples, processing in ${numSegments} segments of ${SEGMENT_LENGTH} samples`)
 
-  if (verbose) console.log(`Audio: ${numSamples} samples, padded to ${paddedSamples} (align ${SEGMENT_ALIGN})`)
+  // Allocate output stem accumulators: [4 stems][2 channels][numSamples]
+  const stemAccum = STEM_NAMES.map(() => ({
+    left: new Float64Array(numSamples),
+    right: new Float64Array(numSamples),
+    weight: new Float64Array(numSamples),
+  }))
 
-  // 4. Compute complex-as-channels spectrogram: [1, 4, freq_bins, frames]
-  // Use padded audio for spectrogram to match waveform length
-  const paddedLeft = new Float64Array(paddedSamples)
-  const paddedRight = new Float64Array(paddedSamples)
-  paddedLeft.set(left)
-  paddedRight.set(right)
-  const { data: specData, freqBins, numFrames } = computeComplexAsChannels(paddedLeft, paddedRight)
-  const spectrogramTensor = new ort.Tensor('float32', specData, [1, 4, freqBins, numFrames])
+  for (let seg = 0; seg < numSegments; seg++) {
+    const start = seg * STEP
+    const end = Math.min(start + SEGMENT_LENGTH, numSamples)
+    const segLen = SEGMENT_LENGTH  // always use full segment length (zero-pad if needed)
 
-  // 5. Build the feed dictionary using the model's actual input names
-  const feeds: Record<string, InstanceType<typeof ort.Tensor>> = {}
-  for (const name of session.inputNames) {
-    const nameLower = name.toLowerCase()
-    if (nameLower.includes('stft') || nameLower.includes('spec')) {
-      feeds[name] = spectrogramTensor
-    } else {
+    // Extract segment (zero-padded to SEGMENT_LENGTH)
+    const segLeft = new Float64Array(segLen)
+    const segRight = new Float64Array(segLen)
+    const validLen = end - start
+    for (let i = 0; i < validLen; i++) {
+      segLeft[i] = left[start + i]
+      segRight[i] = right[start + i]
+    }
+
+    // Create waveform tensor: [1, 2, SEGMENT_LENGTH]
+    const waveformData = new Float32Array(2 * segLen)
+    for (let i = 0; i < segLen; i++) {
+      waveformData[i] = segLeft[i]
+      waveformData[segLen + i] = segRight[i]
+    }
+    const waveformTensor = new ort.Tensor('float32', waveformData, [1, 2, segLen])
+
+    // Build feed dictionary
+    const feeds: Record<string, InstanceType<typeof ort.Tensor>> = {}
+    for (const name of session.inputNames) {
       feeds[name] = waveformTensor
     }
-  }
 
-  // 6. Run inference
-  if (verbose) console.log('Running demucs inference...')
-  const results = await session.run(feeds)
+    // Run inference on this segment
+    if (verbose) console.log(`  Segment ${seg + 1}/${numSegments} (${start}-${end})...`)
+    const results = await session.run(feeds)
 
-  // 7. Extract stem outputs and save as WAV
-  const stemPaths = new Map<string, string>()
-  const outputNames = session.outputNames
+    // Extract stems from output and accumulate with crossfade weights
+    const outputTensor = results[session.outputNames[0]]
+    const outputData = outputTensor.data as Float32Array
+    const outputDims = outputTensor.dims as readonly number[]
 
-  // Handle single-output models (all stems packed in one tensor)
-  // vs multi-output models (one tensor per stem)
-  if (outputNames.length === 1) {
-    // Single output: shape is [batch, stems, channels, samples] or [stems, channels, samples]
-    const tensor = results[outputNames[0]]
-    const tensorData = tensor.data as Float32Array
-    const dims = tensor.dims as readonly number[]
+    // Build crossfade window (ramp up at start, ramp down at end of overlap regions)
+    const window = new Float64Array(segLen)
+    for (let i = 0; i < segLen; i++) {
+      let w = 1.0
+      if (seg > 0 && i < OVERLAP) {
+        w = i / OVERLAP  // ramp up in overlap region at start
+      }
+      if (seg < numSegments - 1 && i >= segLen - OVERLAP) {
+        w = (segLen - 1 - i) / OVERLAP  // ramp down in overlap region at end
+      }
+      window[i] = w
+    }
 
-    if (verbose) console.log(`Output tensor shape: [${dims.join(', ')}]`)
-
-    let numStems: number
-    let numChannels: number
-    let stemSamples: number
-    let stemOffset: (s: number, ch: number, i: number) => number
-
-    if (dims.length === 4) {
-      // [batch, stems, channels, samples]
-      numStems = dims[1]
-      numChannels = dims[2]
-      stemSamples = dims[3]
-      stemOffset = (s, ch, i) => s * numChannels * stemSamples + ch * stemSamples + i
-    } else if (dims.length === 3) {
-      // [stems, channels, samples]
-      numStems = dims[0]
-      numChannels = dims[1]
-      stemSamples = dims[2]
-      stemOffset = (s, ch, i) => s * numChannels * stemSamples + ch * stemSamples + i
-    } else if (dims.length === 2) {
-      // [stems, samples] — mono stems
-      numStems = dims[0]
-      numChannels = 1
-      stemSamples = dims[1]
-      stemOffset = (s, _ch, i) => s * stemSamples + i
+    // Parse output tensor — determine shape
+    let numStems: number, numCh: number, stemSamples: number
+    if (outputDims.length === 4) {
+      numStems = outputDims[1]; numCh = outputDims[2]; stemSamples = outputDims[3]
+    } else if (outputDims.length === 3) {
+      numStems = outputDims[0]; numCh = outputDims[1]; stemSamples = outputDims[2]
     } else {
-      throw new Error(`Unexpected output tensor shape: [${dims.join(', ')}]`)
+      throw new Error(`Unexpected output shape: [${outputDims.join(', ')}]`)
     }
 
     for (let s = 0; s < Math.min(numStems, STEM_NAMES.length); s++) {
-      const stemName = STEM_NAMES[s]
-      const stemLeft = new Float64Array(stemSamples)
-      const stemRight = new Float64Array(stemSamples)
-
-      for (let i = 0; i < stemSamples; i++) {
-        stemLeft[i] = tensorData[stemOffset(s, 0, i)]
-        stemRight[i] = numChannels > 1 ? tensorData[stemOffset(s, 1, i)] : tensorData[stemOffset(s, 0, i)]
+      for (let i = 0; i < Math.min(stemSamples, validLen); i++) {
+        const outIdx = start + i
+        if (outIdx >= numSamples) break
+        const lIdx = s * numCh * stemSamples + 0 * stemSamples + i
+        const rIdx = numCh > 1 ? s * numCh * stemSamples + 1 * stemSamples + i : lIdx
+        const w = window[i]
+        stemAccum[s].left[outIdx] += outputData[lIdx] * w
+        stemAccum[s].right[outIdx] += outputData[rIdx] * w
+        stemAccum[s].weight[outIdx] += w
       }
-
-      const trimmedLeft = stemLeft.length > numSamples ? stemLeft.slice(0, numSamples) : stemLeft
-      const trimmedRight = stemRight.length > numSamples ? stemRight.slice(0, numSamples) : stemRight
-
-      const outputPath = join(outputDir, `${stemName}.wav`)
-      await saveStereoWav(trimmedLeft, trimmedRight, DEMUCS_SR, outputPath)
-      stemPaths.set(stemName, outputPath)
-      if (verbose) console.log(`Saved ${stemName} -> ${outputPath}`)
     }
-  } else {
-    // Multi-output: one tensor per stem
-    for (let s = 0; s < STEM_NAMES.length && s < outputNames.length; s++) {
-      const stemName = STEM_NAMES[s]
-      const outputName = outputNames[s]
-      const tensor = results[outputName]
-      const tensorData = tensor.data as Float32Array
-      const tensorDims = tensor.dims as readonly number[]
+  }
 
-      let stemLeft: Float64Array
-      let stemRight: Float64Array
-
-      if (tensorDims.length === 3) {
-        // Shape: [1, 2, samples] — direct stereo waveform
-        const stemSamples = tensorDims[2]
-        stemLeft = new Float64Array(stemSamples)
-        stemRight = new Float64Array(stemSamples)
-        for (let i = 0; i < stemSamples; i++) {
-          stemLeft[i] = tensorData[i]
-          stemRight[i] = tensorData[stemSamples + i]
-        }
-      } else if (tensorDims.length === 4) {
-        // Shape: [1, channels, freq_bins, frames] — spectrogram needing ISTFT
-        const channels = tensorDims[1]
-        const fBins = tensorDims[2]
-        const tFrames = tensorDims[3]
-        const result = reconstructStereoFromSpec(tensorData, channels, fBins, tFrames, numSamples)
-        stemLeft = result.left
-        stemRight = result.right
-      } else {
-        throw new Error(`Unexpected tensor shape for output "${outputName}": [${tensorDims.join(', ')}]`)
+  // Normalize by accumulated weights
+  for (const accum of stemAccum) {
+    for (let i = 0; i < numSamples; i++) {
+      if (accum.weight[i] > 0) {
+        accum.left[i] /= accum.weight[i]
+        accum.right[i] /= accum.weight[i]
       }
-
-      const trimmedLeft = stemLeft.length > numSamples ? stemLeft.slice(0, numSamples) : stemLeft
-      const trimmedRight = stemRight.length > numSamples ? stemRight.slice(0, numSamples) : stemRight
-
-      const outputPath = join(outputDir, `${stemName}.wav`)
-      await saveStereoWav(trimmedLeft, trimmedRight, DEMUCS_SR, outputPath)
-      stemPaths.set(stemName, outputPath)
-      if (verbose) console.log(`Saved ${stemName} -> ${outputPath}`)
     }
+  }
+
+  // 7. Save accumulated stems as WAV files
+  const stemPaths = new Map<string, string>()
+
+  for (let s = 0; s < STEM_NAMES.length; s++) {
+    const stemName = STEM_NAMES[s]
+    const outputPath = join(outputDir, `${stemName}.wav`)
+    await saveStereoWav(stemAccum[s].left, stemAccum[s].right, DEMUCS_SR, outputPath)
+    stemPaths.set(stemName, outputPath)
+    if (verbose) console.log(`Saved ${stemName} -> ${outputPath}`)
   }
 
   return {
