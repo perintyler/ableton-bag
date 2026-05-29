@@ -23,6 +23,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@spotify/basic-pitch": "^1.0.1",
+    "onnxruntime-node": "^1.26.0",
     "zod": "3.25.76"
   },
   "devDependencies": {

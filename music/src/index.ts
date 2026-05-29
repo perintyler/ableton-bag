@@ -123,6 +123,8 @@ export {
 
 export {
   transcribePolyphonic,
+  transcribePolyphonicTS,
+  transcribePolyphonicPython,
   type TranscriptionResult,
   type TranscribedNote,
   type TranscribeOptions,
