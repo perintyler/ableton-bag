@@ -39,7 +39,6 @@ export {
 
 export {
   analyzeTimbre,
-  analyzeTimbreTS,
   type AudioAnalysisResult,
   type SpectralAnalysis,
   type TransientAnalysis,
@@ -49,7 +48,6 @@ export {
   compareTimbre,
   suggestMacroValues,
   spectralCorrectionCurve,
-  spectralCorrectionCurveTS,
   type TimbreComparison,
   type EQRecommendation,
   type EQBandRecommendation,
@@ -58,7 +56,6 @@ export {
 
 export {
   isolateDrumParts,
-  isolateDrumPartsTS,
   extractDrumMidi,
   drumNotesToBatches,
   type DrumParts,
@@ -68,7 +65,6 @@ export {
 
 export {
   extractDrumFeatures,
-  extractDrumFeaturesTS,
   drumFeatureDistance,
   findClosestSample,
   type DrumFeatures,
@@ -77,9 +73,7 @@ export {
 
 export {
   timbreSimilarity,
-  timbreSimilarityTS,
   mfccDistance,
-  mfccDistanceTS,
   type SimilarityResult,
   type MfccDistanceResult,
 } from './similarity.js'
@@ -118,7 +112,6 @@ export {
 
 export {
   transcribePolyphonic,
-  transcribePolyphonicTS,
   type TranscriptionResult,
   type TranscribedNote,
   type TranscribeOptions,

@@ -137,7 +137,10 @@ export async function analyzeTimbreTS(
   }
 
   // Find onset peaks (local maxima above a threshold)
-  const envMax = Math.max(...onsetEnv)
+  let envMax = -Infinity
+  for (let i = 0; i < onsetEnv.length; i++) {
+    if (onsetEnv[i] > envMax) envMax = onsetEnv[i]
+  }
   const threshold = envMax * 0.3
   const onsetFrames: number[] = []
   for (let i = 1; i < onsetEnv.length - 1; i++) {
@@ -165,7 +168,11 @@ export async function analyzeTimbreTS(
     const seg = onsetEnv.slice(s, e)
     if (seg.length < 10) continue
 
-    const pk = seg.indexOf(Math.max(...seg))
+    let segMax = -Infinity
+    let pk = 0
+    for (let j = 0; j < seg.length; j++) {
+      if (seg[j] > segMax) { segMax = seg[j]; pk = j }
+    }
     const pv = seg[pk]
     if (pv < 0.1) continue
 

@@ -1,4 +1,4 @@
-import { requireCmd } from './exec.js'
+import { exec, requireCmd } from './exec.js'
 import { execFile } from 'node:child_process'
 
 export interface Onset {

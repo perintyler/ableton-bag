@@ -1,6 +1,5 @@
 import { exec } from './exec.js'
 import { mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
 import { join, basename, extname } from 'node:path'
 import { detectOnsets } from './onset.js'
 import { filter } from './audio.js'

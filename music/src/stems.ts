@@ -17,6 +17,8 @@ export interface SeparateOptions {
   device?: 'cpu' | 'cuda'
   /** Path to the ONNX model file (default: searches standard locations) */
   modelPath?: string
+  /** Log progress to console (default: false) */
+  verbose?: boolean
 }
 
 export interface StemResult {
@@ -252,6 +254,7 @@ export async function separate(options: SeparateOptions): Promise<StemResult> {
     modelPath: modelPathOverride,
   } = options
 
+  const verbose = options.verbose ?? false
   const modelPath = findModelPath(modelPathOverride)
 
   await mkdir(outputDir, { recursive: true })
@@ -266,9 +269,9 @@ export async function separate(options: SeparateOptions): Promise<StemResult> {
   // 2. Load the ONNX model and inspect its inputs/outputs
   const session = await ort.InferenceSession.create(modelPath)
 
-  console.log('ONNX model loaded:', modelPath)
-  console.log('Input names:', session.inputNames)
-  console.log('Output names:', session.outputNames)
+  if (verbose) console.log('ONNX model loaded:', modelPath)
+  if (verbose) console.log('Input names:', session.inputNames)
+  if (verbose) console.log('Output names:', session.outputNames)
 
   // 3. Prepare the waveform tensor: [1, 2, samples]
   const waveformData = new Float32Array(2 * numSamples)
@@ -294,7 +297,7 @@ export async function separate(options: SeparateOptions): Promise<StemResult> {
   }
 
   // 6. Run inference
-  console.log('Running demucs inference...')
+  if (verbose) console.log('Running demucs inference...')
   const results = await session.run(feeds)
 
   // 7. Extract stem outputs and save as WAV
@@ -309,7 +312,7 @@ export async function separate(options: SeparateOptions): Promise<StemResult> {
     const tensorData = tensor.data as Float32Array
     const dims = tensor.dims as readonly number[]
 
-    console.log(`Output tensor shape: [${dims.join(', ')}]`)
+    if (verbose) console.log(`Output tensor shape: [${dims.join(', ')}]`)
 
     let numStems: number
     let numChannels: number
@@ -354,7 +357,7 @@ export async function separate(options: SeparateOptions): Promise<StemResult> {
       const outputPath = join(outputDir, `${stemName}.wav`)
       await saveStereoWav(trimmedLeft, trimmedRight, DEMUCS_SR, outputPath)
       stemPaths.set(stemName, outputPath)
-      console.log(`Saved ${stemName} -> ${outputPath}`)
+      if (verbose) console.log(`Saved ${stemName} -> ${outputPath}`)
     }
   } else {
     // Multi-output: one tensor per stem
@@ -395,7 +398,7 @@ export async function separate(options: SeparateOptions): Promise<StemResult> {
       const outputPath = join(outputDir, `${stemName}.wav`)
       await saveStereoWav(trimmedLeft, trimmedRight, DEMUCS_SR, outputPath)
       stemPaths.set(stemName, outputPath)
-      console.log(`Saved ${stemName} -> ${outputPath}`)
+      if (verbose) console.log(`Saved ${stemName} -> ${outputPath}`)
     }
   }
 

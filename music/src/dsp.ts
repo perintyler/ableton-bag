@@ -14,6 +14,10 @@ import { exec, requireCmd } from './exec.js'
 /** Hann window of given length */
 export function hannWindow(length: number): Float64Array {
   const w = new Float64Array(length)
+  if (length <= 1) {
+    w.fill(1)
+    return w
+  }
   for (let i = 0; i < length; i++) {
     w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (length - 1)))
   }
@@ -23,6 +27,10 @@ export function hannWindow(length: number): Float64Array {
 /** Hamming window of given length */
 export function hammingWindow(length: number): Float64Array {
   const w = new Float64Array(length)
+  if (length <= 1) {
+    w.fill(1)
+    return w
+  }
   for (let i = 0; i < length; i++) {
     w[i] = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (length - 1))
   }
@@ -337,25 +345,16 @@ export function istft(frames: Float64Array[], options?: STFTOptions & { length?:
     const complexFrame = frames[t]
     const numBins = complexFrame.length / 2
 
-    // Reconstruct full-length complex spectrum (mirror conjugate for negative frequencies)
+    // Reconstruct full-length complex spectrum from positive-frequency bins
     const fullSpectrum = new Float64Array(2 * nFft)
     for (let i = 0; i < numBins; i++) {
       fullSpectrum[2 * i] = complexFrame[2 * i]
       fullSpectrum[2 * i + 1] = complexFrame[2 * i + 1]
     }
-    // Mirror: bin k maps to bin N-k with conjugated imaginary part
-    for (let i = 1; i < nFft - numBins + 1; i++) {
-      const srcIdx = numBins - 1 - i
-      if (srcIdx > 0) {
-        fullSpectrum[2 * (nFft - srcIdx)] = complexFrame[2 * srcIdx]
-        fullSpectrum[2 * (nFft - srcIdx) + 1] = -complexFrame[2 * srcIdx + 1]
-      }
-    }
-    // Fill negative frequency bins by conjugate symmetry
+    // Mirror negative frequencies (conjugate symmetry for real signals)
     for (let i = numBins; i < nFft; i++) {
-      const mirror = nFft - i
-      fullSpectrum[2 * i] = fullSpectrum[2 * mirror]
-      fullSpectrum[2 * i + 1] = -fullSpectrum[2 * mirror + 1]
+      fullSpectrum[2 * i] = fullSpectrum[2 * (nFft - i)]       // real part
+      fullSpectrum[2 * i + 1] = -fullSpectrum[2 * (nFft - i) + 1]  // negated imaginary
     }
 
     // IFFT to get time-domain segment

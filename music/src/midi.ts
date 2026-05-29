@@ -169,7 +169,7 @@ export function createMidiBuffer(options: CreateMidiOptions): Buffer {
     ...writeVarLen(0),
     0xff, 0x58, 0x04,
     timeSignature[0],
-    Math.log2(timeSignature[1]),
+    Math.round(Math.log2(timeSignature[1])),
     24, 8,
     // Tempo meta event at tick 0
     ...writeVarLen(0),
