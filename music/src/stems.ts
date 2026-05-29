@@ -273,16 +273,29 @@ export async function separate(options: SeparateOptions): Promise<StemResult> {
   if (verbose) console.log('Input names:', session.inputNames)
   if (verbose) console.log('Output names:', session.outputNames)
 
-  // 3. Prepare the waveform tensor: [1, 2, samples]
-  const waveformData = new Float32Array(2 * numSamples)
+  // 3. Prepare the waveform tensor: [1, 2, paddedSamples]
+  // The htdemucs ONNX model internally reshapes to {1, 4, -1, segment_size}.
+  // The input sample count must be divisible by the model's segment alignment.
+  const SEGMENT_ALIGN = 343980
+  const paddedSamples = Math.ceil(numSamples / SEGMENT_ALIGN) * SEGMENT_ALIGN
+
+  const waveformData = new Float32Array(2 * paddedSamples)
   for (let i = 0; i < numSamples; i++) {
     waveformData[i] = left[i]
-    waveformData[numSamples + i] = right[i]
+    waveformData[paddedSamples + i] = right[i]
   }
-  const waveformTensor = new ort.Tensor('float32', waveformData, [1, 2, numSamples])
+  // Remaining samples are zero-padded (Float32Array initializes to 0)
+  const waveformTensor = new ort.Tensor('float32', waveformData, [1, 2, paddedSamples])
+
+  if (verbose) console.log(`Audio: ${numSamples} samples, padded to ${paddedSamples} (align ${SEGMENT_ALIGN})`)
 
   // 4. Compute complex-as-channels spectrogram: [1, 4, freq_bins, frames]
-  const { data: specData, freqBins, numFrames } = computeComplexAsChannels(left, right)
+  // Use padded audio for spectrogram to match waveform length
+  const paddedLeft = new Float64Array(paddedSamples)
+  const paddedRight = new Float64Array(paddedSamples)
+  paddedLeft.set(left)
+  paddedRight.set(right)
+  const { data: specData, freqBins, numFrames } = computeComplexAsChannels(paddedLeft, paddedRight)
   const spectrogramTensor = new ort.Tensor('float32', specData, [1, 4, freqBins, numFrames])
 
   // 5. Build the feed dictionary using the model's actual input names
