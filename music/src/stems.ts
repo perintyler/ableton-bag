@@ -301,46 +301,102 @@ export async function separate(options: SeparateOptions): Promise<StemResult> {
   const stemPaths = new Map<string, string>()
   const outputNames = session.outputNames
 
-  for (let s = 0; s < STEM_NAMES.length && s < outputNames.length; s++) {
-    const stemName = STEM_NAMES[s]
-    const outputName = outputNames[s]
-    const tensor = results[outputName]
+  // Handle single-output models (all stems packed in one tensor)
+  // vs multi-output models (one tensor per stem)
+  if (outputNames.length === 1) {
+    // Single output: shape is [batch, stems, channels, samples] or [stems, channels, samples]
+    const tensor = results[outputNames[0]]
     const tensorData = tensor.data as Float32Array
-    const tensorDims = tensor.dims as readonly number[]
+    const dims = tensor.dims as readonly number[]
 
-    let stemLeft: Float64Array
-    let stemRight: Float64Array
+    console.log(`Output tensor shape: [${dims.join(', ')}]`)
 
-    // Determine output format from tensor shape
-    if (tensorDims.length === 3) {
-      // Shape: [1, 2, samples] — direct waveform output
-      const stemSamples = tensorDims[2]
-      stemLeft = new Float64Array(stemSamples)
-      stemRight = new Float64Array(stemSamples)
-      for (let i = 0; i < stemSamples; i++) {
-        stemLeft[i] = tensorData[i]
-        stemRight[i] = tensorData[stemSamples + i]
-      }
-    } else if (tensorDims.length === 4) {
-      // Shape: [1, channels, freq_bins, frames] — spectrogram needing ISTFT
-      const channels = tensorDims[1]
-      const fBins = tensorDims[2]
-      const tFrames = tensorDims[3]
-      const result = reconstructStereoFromSpec(tensorData, channels, fBins, tFrames, numSamples)
-      stemLeft = result.left
-      stemRight = result.right
+    let numStems: number
+    let numChannels: number
+    let stemSamples: number
+    let stemOffset: (s: number, ch: number, i: number) => number
+
+    if (dims.length === 4) {
+      // [batch, stems, channels, samples]
+      numStems = dims[1]
+      numChannels = dims[2]
+      stemSamples = dims[3]
+      stemOffset = (s, ch, i) => s * numChannels * stemSamples + ch * stemSamples + i
+    } else if (dims.length === 3) {
+      // [stems, channels, samples]
+      numStems = dims[0]
+      numChannels = dims[1]
+      stemSamples = dims[2]
+      stemOffset = (s, ch, i) => s * numChannels * stemSamples + ch * stemSamples + i
+    } else if (dims.length === 2) {
+      // [stems, samples] — mono stems
+      numStems = dims[0]
+      numChannels = 1
+      stemSamples = dims[1]
+      stemOffset = (s, _ch, i) => s * stemSamples + i
     } else {
-      throw new Error(`Unexpected tensor shape for output "${outputName}": [${tensorDims.join(', ')}]`)
+      throw new Error(`Unexpected output tensor shape: [${dims.join(', ')}]`)
     }
 
-    // Trim to original length
-    const trimmedLeft = stemLeft.length > numSamples ? stemLeft.slice(0, numSamples) : stemLeft
-    const trimmedRight = stemRight.length > numSamples ? stemRight.slice(0, numSamples) : stemRight
+    for (let s = 0; s < Math.min(numStems, STEM_NAMES.length); s++) {
+      const stemName = STEM_NAMES[s]
+      const stemLeft = new Float64Array(stemSamples)
+      const stemRight = new Float64Array(stemSamples)
 
-    const outputPath = join(outputDir, `${stemName}.wav`)
-    await saveStereoWav(trimmedLeft, trimmedRight, DEMUCS_SR, outputPath)
-    stemPaths.set(stemName, outputPath)
-    console.log(`Saved ${stemName} -> ${outputPath}`)
+      for (let i = 0; i < stemSamples; i++) {
+        stemLeft[i] = tensorData[stemOffset(s, 0, i)]
+        stemRight[i] = numChannels > 1 ? tensorData[stemOffset(s, 1, i)] : tensorData[stemOffset(s, 0, i)]
+      }
+
+      const trimmedLeft = stemLeft.length > numSamples ? stemLeft.slice(0, numSamples) : stemLeft
+      const trimmedRight = stemRight.length > numSamples ? stemRight.slice(0, numSamples) : stemRight
+
+      const outputPath = join(outputDir, `${stemName}.wav`)
+      await saveStereoWav(trimmedLeft, trimmedRight, DEMUCS_SR, outputPath)
+      stemPaths.set(stemName, outputPath)
+      console.log(`Saved ${stemName} -> ${outputPath}`)
+    }
+  } else {
+    // Multi-output: one tensor per stem
+    for (let s = 0; s < STEM_NAMES.length && s < outputNames.length; s++) {
+      const stemName = STEM_NAMES[s]
+      const outputName = outputNames[s]
+      const tensor = results[outputName]
+      const tensorData = tensor.data as Float32Array
+      const tensorDims = tensor.dims as readonly number[]
+
+      let stemLeft: Float64Array
+      let stemRight: Float64Array
+
+      if (tensorDims.length === 3) {
+        // Shape: [1, 2, samples] — direct stereo waveform
+        const stemSamples = tensorDims[2]
+        stemLeft = new Float64Array(stemSamples)
+        stemRight = new Float64Array(stemSamples)
+        for (let i = 0; i < stemSamples; i++) {
+          stemLeft[i] = tensorData[i]
+          stemRight[i] = tensorData[stemSamples + i]
+        }
+      } else if (tensorDims.length === 4) {
+        // Shape: [1, channels, freq_bins, frames] — spectrogram needing ISTFT
+        const channels = tensorDims[1]
+        const fBins = tensorDims[2]
+        const tFrames = tensorDims[3]
+        const result = reconstructStereoFromSpec(tensorData, channels, fBins, tFrames, numSamples)
+        stemLeft = result.left
+        stemRight = result.right
+      } else {
+        throw new Error(`Unexpected tensor shape for output "${outputName}": [${tensorDims.join(', ')}]`)
+      }
+
+      const trimmedLeft = stemLeft.length > numSamples ? stemLeft.slice(0, numSamples) : stemLeft
+      const trimmedRight = stemRight.length > numSamples ? stemRight.slice(0, numSamples) : stemRight
+
+      const outputPath = join(outputDir, `${stemName}.wav`)
+      await saveStereoWav(trimmedLeft, trimmedRight, DEMUCS_SR, outputPath)
+      stemPaths.set(stemName, outputPath)
+      console.log(`Saved ${stemName} -> ${outputPath}`)
+    }
   }
 
   return {
