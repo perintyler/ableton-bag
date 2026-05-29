@@ -1,8 +1,5 @@
-import { exec, requireCmd } from './exec.js'
-import { readFile } from 'node:fs/promises'
-import { join, dirname } from 'node:path'
-import { tmpdir } from 'node:os'
-import { randomUUID } from 'node:crypto'
+import { requireCmd } from './exec.js'
+import { execFile } from 'node:child_process'
 
 export interface Onset {
   /** Time in seconds */
@@ -34,17 +31,39 @@ export async function detectOnsets(
   const threshold = options?.silenceThreshold ?? -40
   const minInterval = options?.minimumInterval ?? 0.03
 
-  // Use ffmpeg to extract raw PCM samples for analysis
-  const { stdout } = await exec('ffmpeg', [
-    '-i', filePath,
-    '-ac', '1',
-    '-ar', '8000', // downsample for faster analysis
-    '-f', 'f32le',
-    '-v', 'quiet',
-    'pipe:1',
-  ], { maxBuffer: 100 * 1024 * 1024 })
+  // Use ffmpeg to extract raw PCM samples for analysis.
+  // Must use execFile with encoding: 'buffer' to get raw binary PCM data.
+  // Using exec() returns stdout as UTF-8 string, which corrupts binary data.
+  const buffer = await new Promise<Buffer>((resolve, reject) => {
+    execFile(
+      'ffmpeg',
+      [
+        '-i', filePath,
+        '-ac', '1',
+        '-ar', '8000', // downsample for faster analysis
+        '-f', 'f32le',
+        '-v', 'quiet',
+        'pipe:1',
+      ],
+      {
+        maxBuffer: 100 * 1024 * 1024,
+        encoding: 'buffer' as any,
+      },
+      (error, stdout) => {
+        if (error) {
+          reject(new Error(`ffmpeg failed to decode ${filePath}: ${error.message}`))
+          return
+        }
+        resolve(stdout as unknown as Buffer)
+      }
+    )
+  })
 
-  const samples = new Float32Array(Buffer.from(stdout, 'binary').buffer)
+  const samples = new Float32Array(
+    buffer.buffer,
+    buffer.byteOffset,
+    buffer.byteLength / 4
+  )
   const sr = 8000
   const hopSize = 64 // ~8ms hop
   const frameSize = 256 // ~32ms window
@@ -77,7 +96,10 @@ export async function detectOnsets(
   // Peak picking with minimum interval
   const onsets: Onset[] = []
   let lastOnsetTime = -Infinity
-  const maxStrength = Math.max(...onsetStrength)
+  let maxStrength = -Infinity
+  for (let i = 0; i < onsetStrength.length; i++) {
+    if (onsetStrength[i] > maxStrength) maxStrength = onsetStrength[i]
+  }
 
   for (let i = 1; i < onsetStrength.length - 1; i++) {
     const val = onsetStrength[i]
