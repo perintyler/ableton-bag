@@ -1,0 +1,11 @@
+# basic-pitch ONNX model
+#
+# The model file (basic-pitch-nmp.onnx, ~225KB) is excluded from git.
+# To obtain it, run one of:
+#
+#   cp ~/audio-tools-venv/lib/python3.13/site-packages/basic_pitch/saved_models/icassp_2022/nmp.onnx \
+#      packages/music/models/basic-pitch-nmp.onnx
+#
+# Or install basic-pitch in a venv and copy from there:
+#   pip install basic-pitch onnxruntime
+#   python -c "import basic_pitch; print(basic_pitch.__path__)"

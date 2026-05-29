@@ -1,11 +1,12 @@
 import { exec, which } from './exec.js'
 import { loadAudio } from './dsp.js'
 import { writeFile, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 export interface TranscribedNote {
   /** MIDI note number (0-127) */
@@ -73,7 +74,10 @@ function msToFrames(ms: number): number {
 }
 
 /**
- * Find the ONNX model file in standard locations.
+ * Find the ONNX model file. Search order:
+ *   1. Explicit path via options.onnxModelPath
+ *   2. Bundled model at packages/music/models/basic-pitch-nmp.onnx
+ *   3. Python venv fallback at ~/audio-tools-venv/.../nmp.onnx
  */
 function findOnnxModel(explicit?: string): string {
   if (explicit) {
@@ -83,21 +87,27 @@ function findOnnxModel(explicit?: string): string {
     return explicit
   }
 
+  // Bundled with @barry/music package
+  const bundledPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'models', 'basic-pitch-nmp.onnx')
+  if (existsSync(bundledPath)) return bundledPath
+
+  // Python venv fallback
   const home = process.env.HOME ?? '~'
-  const candidates = [
+  const venvCandidates = [
     join(home, 'audio-tools-venv/lib/python3.13/site-packages/basic_pitch/saved_models/icassp_2022/nmp.onnx'),
     join(home, 'audio-tools-venv/lib/python3.12/site-packages/basic_pitch/saved_models/icassp_2022/nmp.onnx'),
     join(home, 'audio-tools-venv/lib/python3.11/site-packages/basic_pitch/saved_models/icassp_2022/nmp.onnx'),
   ]
 
-  for (const candidate of candidates) {
+  for (const candidate of venvCandidates) {
     if (existsSync(candidate)) return candidate
   }
 
   throw new Error(
-    'basic-pitch ONNX model not found. Install basic-pitch in ~/audio-tools-venv ' +
-    'or pass options.onnxModelPath explicitly.\n' +
-    `Searched: ${candidates.join(', ')}`
+    'basic-pitch ONNX model not found. Copy the model to the package:\n' +
+    '  cp ~/audio-tools-venv/lib/python3.13/site-packages/basic_pitch/saved_models/icassp_2022/nmp.onnx packages/music/models/basic-pitch-nmp.onnx\n' +
+    'Or pass options.onnxModelPath explicitly.\n' +
+    `Searched: ${bundledPath}, ${venvCandidates.join(', ')}`
   )
 }
 
