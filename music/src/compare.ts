@@ -1,5 +1,10 @@
 import { analyzeTimbre, type AudioAnalysisResult } from './analyze.js'
 import { exec } from './exec.js'
+import {
+  loadAudio,
+  stft,
+  fftFrequencies,
+} from './dsp.js'
 
 export interface EQBandRecommendation {
   band: string
@@ -144,12 +149,106 @@ export interface SpectralCorrectionCurve {
   smoothed_dB: number[]
 }
 
+const THIRD_OCTAVE_CENTERS = [
+  31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
+  630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300,
+  8000, 10000, 12500, 16000, 20000,
+]
+
 /**
- * Compute a detailed frequency-by-frequency correction curve between two audio files.
- * Returns 1/3 octave center frequencies with per-band correction values in dB.
- * Corrections are clamped to +/-12 dB to avoid extreme adjustments.
+ * Pure TypeScript implementation of spectralCorrectionCurve using dsp.ts.
+ * Loads both files, computes STFT, averages magnitudes, then computes
+ * 1/3 octave correction values with 3-point smoothing, clamped to +/-12 dB.
  */
-export async function spectralCorrectionCurve(
+export async function spectralCorrectionCurveTS(
+  sourceFile: string,
+  targetFile: string,
+): Promise<SpectralCorrectionCurve> {
+  const sr = 44100
+  const nFft = 4096
+
+  const [srcAudio, tgtAudio] = await Promise.all([
+    loadAudio(sourceFile, sr),
+    loadAudio(targetFile, sr),
+  ])
+
+  const srcFrames = stft(srcAudio.samples, { nFft, hopLength: 512 })
+  const tgtFrames = stft(tgtAudio.samples, { nFft, hopLength: 512 })
+  const freqs = fftFrequencies(sr, nFft)
+  const numBins = freqs.length
+
+  // Average magnitude per bin across all frames
+  const avgSrc = new Float64Array(numBins)
+  const avgTgt = new Float64Array(numBins)
+
+  for (const frame of srcFrames) {
+    for (let i = 0; i < numBins; i++) avgSrc[i] += frame[i]
+  }
+  for (const frame of tgtFrames) {
+    for (let i = 0; i < numBins; i++) avgTgt[i] += frame[i]
+  }
+
+  if (srcFrames.length > 0) {
+    for (let i = 0; i < numBins; i++) avgSrc[i] /= srcFrames.length
+  }
+  if (tgtFrames.length > 0) {
+    for (let i = 0; i < numBins; i++) avgTgt[i] /= tgtFrames.length
+  }
+
+  // Compute 1/3 octave corrections
+  const corrections: number[] = []
+  const sixthOctave = Math.pow(2, 1 / 6)
+
+  for (const fc of THIRD_OCTAVE_CENTERS) {
+    const lo = fc / sixthOctave
+    const hi = fc * sixthOctave
+
+    let srcMag = 0
+    let tgtMag = 0
+    let count = 0
+
+    for (let i = 0; i < numBins; i++) {
+      if (freqs[i] >= lo && freqs[i] < hi) {
+        srcMag += avgSrc[i]
+        tgtMag += avgTgt[i]
+        count++
+      }
+    }
+
+    if (count > 0) {
+      srcMag /= count
+      tgtMag /= count
+    }
+
+    srcMag = Math.max(srcMag, 1e-10)
+    tgtMag = Math.max(tgtMag, 1e-10)
+
+    let corr = 20 * Math.log10(tgtMag / srcMag)
+    corr = Math.max(-12, Math.min(12, corr))
+    corrections.push(Math.round(corr * 100) / 100)
+  }
+
+  // 3-point moving average smoothing
+  const smoothed: number[] = []
+  for (let i = 0; i < corrections.length; i++) {
+    const loI = Math.max(0, i - 1)
+    const hiI = Math.min(corrections.length, i + 2)
+    let sum = 0
+    for (let j = loI; j < hiI; j++) sum += corrections[j]
+    smoothed.push(Math.round((sum / (hiI - loI)) * 100) / 100)
+  }
+
+  return {
+    frequencies: [...THIRD_OCTAVE_CENTERS],
+    corrections_dB: corrections,
+    smoothed_dB: smoothed,
+  }
+}
+
+/**
+ * Python/librosa fallback for spectralCorrectionCurve.
+ */
+export async function spectralCorrectionCurvePython(
   sourceFile: string,
   targetFile: string,
   options?: { python?: string }
@@ -212,6 +311,25 @@ print(json.dumps(result))
 
   const lines = stdout.trim().split('\n')
   return JSON.parse(lines[lines.length - 1]) as SpectralCorrectionCurve
+}
+
+/**
+ * Compute a detailed frequency-by-frequency correction curve between two audio files.
+ * Returns 1/3 octave center frequencies with per-band correction values in dB.
+ * Corrections are clamped to +/-12 dB to avoid extreme adjustments.
+ *
+ * Tries the pure TypeScript implementation first, falls back to Python/librosa.
+ */
+export async function spectralCorrectionCurve(
+  sourceFile: string,
+  targetFile: string,
+  options?: { python?: string }
+): Promise<SpectralCorrectionCurve> {
+  try {
+    return await spectralCorrectionCurveTS(sourceFile, targetFile)
+  } catch {
+    return spectralCorrectionCurvePython(sourceFile, targetFile, options)
+  }
 }
 
 async function findPython(): Promise<string> {

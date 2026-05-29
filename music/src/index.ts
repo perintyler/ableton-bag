@@ -41,6 +41,8 @@ export {
 
 export {
   analyzeTimbre,
+  analyzeTimbreTS,
+  analyzeTimbrePython,
   type AudioAnalysisResult,
   type SpectralAnalysis,
   type TransientAnalysis,

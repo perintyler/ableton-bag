@@ -1,4 +1,11 @@
 import { exec, requireCmd } from './exec.js'
+import {
+  loadAudio,
+  stft,
+  fftFrequencies,
+  spectralCentroid,
+  mfcc as computeMfcc,
+} from './dsp.js'
 
 export interface SimilarityResult {
   /** Overall similarity score 0-1 (1 = identical) */

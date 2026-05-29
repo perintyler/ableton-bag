@@ -1,4 +1,12 @@
 import { exec } from './exec.js'
+import {
+  loadAudio,
+  stft,
+  fftFrequencies,
+  spectralCentroid,
+  spectralFlatness,
+  bandEnergy,
+} from './dsp.js'
 
 export interface DrumFeatures {
   /** High-frequency content (spectral centroid, normalized 0-100) */
@@ -24,11 +32,135 @@ export interface SampleMatch {
 }
 
 /**
- * Extract 7 perceptual drum features from an audio file.
- * Based on DrumGAN research timbral descriptors.
- * Uses Python/librosa under the hood.
+ * Pure TypeScript implementation of extractDrumFeatures using dsp.ts.
  */
-export async function extractDrumFeatures(
+export async function extractDrumFeaturesTS(
+  filePath: string,
+): Promise<DrumFeatures> {
+  const sr = 44100
+  const nFft = 4096
+  const hopLength = 512
+
+  const { samples } = await loadAudio(filePath, sr)
+  const frames = stft(samples, { nFft, hopLength })
+  const freqs = fftFrequencies(sr, nFft)
+  const numBins = freqs.length
+
+  // Average magnitude spectrum across all frames
+  const avgSpectrum = new Float64Array(numBins)
+  for (const frame of frames) {
+    for (let i = 0; i < numBins; i++) avgSpectrum[i] += frame[i]
+  }
+  if (frames.length > 0) {
+    for (let i = 0; i < numBins; i++) avgSpectrum[i] /= frames.length
+  }
+
+  // --- Brightness: average spectral centroid / 10000 * 100 ---
+  let centroidSum = 0
+  for (const frame of frames) {
+    centroidSum += spectralCentroid(frame, freqs)
+  }
+  const avgCentroid = frames.length > 0 ? centroidSum / frames.length : 0
+  const brightness = Math.min(Math.max(avgCentroid / 10000 * 100, 0), 100)
+
+  // --- Hardness: onset envelope from spectral flux, attack time ---
+  // Compute spectral flux (half-wave rectified difference between frames)
+  const onsetEnv = new Float64Array(Math.max(0, frames.length))
+  for (let t = 1; t < frames.length; t++) {
+    let flux = 0
+    for (let i = 0; i < numBins; i++) {
+      const diff = frames[t][i] - frames[t - 1][i]
+      if (diff > 0) flux += diff
+    }
+    onsetEnv[t] = flux
+  }
+
+  let pkIdx = 0
+  let pkVal = 0
+  for (let i = 0; i < onsetEnv.length; i++) {
+    if (onsetEnv[i] > pkVal) {
+      pkVal = onsetEnv[i]
+      pkIdx = i
+    }
+  }
+
+  const hopTime = hopLength / sr
+  const threshold = pkVal * 0.1
+  let aStart = 0
+  for (let j = 0; j < pkIdx; j++) {
+    if (onsetEnv[j] > threshold) {
+      aStart = j
+      break
+    }
+  }
+
+  const latMs = (pkIdx - aStart) * hopTime * 1000
+  let hardness: number
+  if (latMs < 5) {
+    hardness = 100.0
+  } else if (latMs > 100) {
+    hardness = 0.0
+  } else {
+    hardness = (1 - (Math.log(latMs) - Math.log(5)) / (Math.log(100) - Math.log(5))) * 100
+  }
+  hardness = Math.min(Math.max(hardness, 0), 100)
+
+  // --- Depth: centroid of frequencies below 500Hz ---
+  const lowMags = new Float64Array(numBins)
+  const lowFreqs = new Float64Array(numBins)
+  let lowCount = 0
+  for (let i = 0; i < numBins; i++) {
+    if (freqs[i] < 500) {
+      lowMags[lowCount] = avgSpectrum[i]
+      lowFreqs[lowCount] = freqs[i]
+      lowCount++
+    }
+  }
+  const lowMagsSlice = lowMags.subarray(0, lowCount)
+  const lowFreqsSlice = lowFreqs.subarray(0, lowCount)
+  let lowSum = 0
+  for (let i = 0; i < lowCount; i++) lowSum += lowMagsSlice[i]
+  let depth: number
+  if (lowSum > 0) {
+    const lowCentroid = spectralCentroid(lowMagsSlice, lowFreqsSlice)
+    depth = (1 - lowCentroid / 500) * 100
+  } else {
+    depth = 0
+  }
+  depth = Math.min(Math.max(depth, 0), 100)
+
+  // --- Roughness: average spectral flatness * 100 ---
+  let flatnessSum = 0
+  for (const frame of frames) {
+    flatnessSum += spectralFlatness(frame)
+  }
+  const avgFlatness = frames.length > 0 ? flatnessSum / frames.length : 0
+  const roughness = Math.min(Math.max(avgFlatness * 100, 0), 100)
+
+  // --- Boominess: bandEnergy 0-150Hz ---
+  const boominess = Math.min(Math.max(bandEnergy(avgSpectrum, freqs, 0, 150), 0), 100)
+
+  // --- Warmth: bandEnergy 200-2000Hz ---
+  const warmth = Math.min(Math.max(bandEnergy(avgSpectrum, freqs, 200, 2000), 0), 100)
+
+  // --- Sharpness: bandEnergy 4000-22050Hz ---
+  const sharpness = Math.min(Math.max(bandEnergy(avgSpectrum, freqs, 4000, 22050), 0), 100)
+
+  return {
+    brightness: Math.round(brightness * 100) / 100,
+    hardness: Math.round(hardness * 100) / 100,
+    depth: Math.round(depth * 100) / 100,
+    roughness: Math.round(roughness * 100) / 100,
+    boominess: Math.round(boominess * 100) / 100,
+    warmth: Math.round(warmth * 100) / 100,
+    sharpness: Math.round(sharpness * 100) / 100,
+  }
+}
+
+/**
+ * Python/librosa fallback for extractDrumFeatures.
+ */
+export async function extractDrumFeaturesPython(
   filePath: string,
   options?: { python?: string }
 ): Promise<DrumFeatures> {
@@ -123,6 +255,23 @@ print(json.dumps(result))
 
   const lines = stdout.trim().split('\n')
   return JSON.parse(lines[lines.length - 1]) as DrumFeatures
+}
+
+/**
+ * Extract 7 perceptual drum features from an audio file.
+ * Based on DrumGAN research timbral descriptors.
+ *
+ * Tries the pure TypeScript implementation first, falls back to Python/librosa.
+ */
+export async function extractDrumFeatures(
+  filePath: string,
+  options?: { python?: string }
+): Promise<DrumFeatures> {
+  try {
+    return await extractDrumFeaturesTS(filePath)
+  } catch {
+    return extractDrumFeaturesPython(filePath, options)
+  }
 }
 
 const FEATURE_KEYS: (keyof DrumFeatures)[] = [
