@@ -54,15 +54,60 @@ async function findPython(): Promise<string> {
 }
 
 /**
- * Isolate drum parts (kick, snare, hihat) from a drum audio file
- * using frequency-domain filtering via Python/scipy.
- *
- * Frequency ranges:
+ * Pure ffmpeg implementation of isolateDrumParts.
+ * Uses ffmpeg audio filters for frequency-domain separation:
  * - Kick: lowpass at 250 Hz
- * - Snare: bandpass 200-5000 Hz, then subtract lowpass 300 Hz to remove kick bleed
+ * - Snare: bandpass 200-5000 Hz
  * - Hihat: bandpass 3000-16000 Hz
  */
-export async function isolateDrumParts(
+export async function isolateDrumPartsTS(
+  drumsFile: string,
+  outputDir: string,
+  options?: { sr?: number }
+): Promise<DrumParts> {
+  await mkdir(outputDir, { recursive: true })
+
+  const sr = options?.sr ?? 44100
+  const base = basename(drumsFile, extname(drumsFile))
+
+  const kickPath = join(outputDir, `${base}_kick.wav`)
+  const snarePath = join(outputDir, `${base}_snare.wav`)
+  const hihatPath = join(outputDir, `${base}_hihat.wav`)
+
+  const arArgs = ['-ar', String(sr), '-ac', '1']
+
+  await Promise.all([
+    // Kick: lowpass at 250 Hz
+    exec('ffmpeg', [
+      '-y', '-i', drumsFile,
+      '-af', 'lowpass=f=250',
+      ...arArgs, kickPath,
+    ], { timeout: 120_000 }),
+    // Snare: bandpass 200-5000 Hz
+    exec('ffmpeg', [
+      '-y', '-i', drumsFile,
+      '-af', 'bandpass=f=1000:width_type=h:w=4800,highpass=f=200',
+      ...arArgs, snarePath,
+    ], { timeout: 120_000 }),
+    // Hihat: bandpass 3000-16000 Hz
+    exec('ffmpeg', [
+      '-y', '-i', drumsFile,
+      '-af', 'bandpass=f=9500:width_type=h:w=13000,highpass=f=3000',
+      ...arArgs, hihatPath,
+    ], { timeout: 120_000 }),
+  ])
+
+  return {
+    kick: kickPath,
+    snare: snarePath,
+    hihat: hihatPath,
+  }
+}
+
+/**
+ * Python/scipy fallback for isolateDrumParts.
+ */
+export async function isolateDrumPartsPython(
   drumsFile: string,
   outputDir: string,
   options?: { sr?: number }
@@ -160,6 +205,28 @@ print('ok')
     kick: kickPath,
     snare: snarePath,
     hihat: hihatPath,
+  }
+}
+
+/**
+ * Isolate drum parts (kick, snare, hihat) from a drum audio file.
+ *
+ * Tries the pure ffmpeg implementation first, falls back to Python/scipy.
+ *
+ * Frequency ranges:
+ * - Kick: lowpass at 250 Hz
+ * - Snare: bandpass 200-5000 Hz
+ * - Hihat: bandpass 3000-16000 Hz
+ */
+export async function isolateDrumParts(
+  drumsFile: string,
+  outputDir: string,
+  options?: { sr?: number }
+): Promise<DrumParts> {
+  try {
+    return await isolateDrumPartsTS(drumsFile, outputDir, options)
+  } catch {
+    return isolateDrumPartsPython(drumsFile, outputDir, options)
   }
 }
 

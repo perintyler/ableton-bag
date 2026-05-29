@@ -52,6 +52,8 @@ export {
   compareTimbre,
   suggestMacroValues,
   spectralCorrectionCurve,
+  spectralCorrectionCurveTS,
+  spectralCorrectionCurvePython,
   type TimbreComparison,
   type EQRecommendation,
   type EQBandRecommendation,
@@ -60,6 +62,8 @@ export {
 
 export {
   isolateDrumParts,
+  isolateDrumPartsTS,
+  isolateDrumPartsPython,
   extractDrumMidi,
   drumNotesToBatches,
   type DrumParts,
@@ -69,6 +73,8 @@ export {
 
 export {
   extractDrumFeatures,
+  extractDrumFeaturesTS,
+  extractDrumFeaturesPython,
   drumFeatureDistance,
   findClosestSample,
   type DrumFeatures,
@@ -77,7 +83,11 @@ export {
 
 export {
   timbreSimilarity,
+  timbreSimilarityTS,
+  timbreSimilarityPython,
   mfccDistance,
+  mfccDistanceTS,
+  mfccDistancePython,
   type SimilarityResult,
   type MfccDistanceResult,
 } from './similarity.js'
