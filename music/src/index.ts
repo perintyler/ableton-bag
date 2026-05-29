@@ -88,6 +88,28 @@ export {
 } from './eq-mapping.js'
 
 export {
+  fft,
+  magnitudeSpectrum,
+  powerSpectrum,
+  stft,
+  fftFrequencies,
+  spectralCentroid,
+  spectralBandwidth,
+  spectralFlatness,
+  spectralRolloff,
+  bandEnergy,
+  hzToMel,
+  melToHz,
+  melFilterbank,
+  dctII,
+  mfcc,
+  loadAudio,
+  hannWindow,
+  hammingWindow,
+  type STFTOptions,
+} from './dsp.js'
+
+export {
   transcribePolyphonic,
   type TranscriptionResult,
   type TranscribedNote,
