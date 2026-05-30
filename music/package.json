@@ -1,6 +1,7 @@
 {
   "name": "@barry/music",
   "version": "1.0.0",
+  "license": "SEE LICENSE IN LICENSE.md",
   "description": "Audio processing utilities for stem separation, frequency filtering, onset detection, and MIDI generation",
   "type": "module",
   "main": "src/index.ts",

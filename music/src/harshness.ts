@@ -63,7 +63,9 @@ export interface EQFix {
   gain: number
   /** Q factor (frequency / bandwidth) */
   q: number
-  /** Whether this should be a static or dynamic cut */
+  /** Advisory: 'static' means a fixed EQ cut is appropriate; 'dynamic' means a de-esser
+   *  or dynamic EQ would be ideal (EQ Eight only applies static cuts, so dynamic regions
+   *  get a more conservative gain to avoid dulling the signal). */
   mode: 'static' | 'dynamic'
   /** Human-readable explanation */
   rationale: string
@@ -109,41 +111,14 @@ function localEnvelope(magnitudes: Float64Array, halfWidth: number): Float64Arra
   const n = magnitudes.length
   const envelope = new Float64Array(n)
 
-  // Running sum for efficiency
-  let sum = 0
-  for (let i = 0; i < Math.min(halfWidth + 1, n); i++) {
-    sum += magnitudes[i]
-  }
-
-  for (let i = 0; i < n; i++) {
-    const left = i - halfWidth
-    const right = i + halfWidth
-
-    // Add the new right element
-    if (right >= 0 && right < n && i > 0) {
-      sum += magnitudes[right]
-    }
-    // Remove the element that fell off the left
-    if (left - 1 >= 0 && i > 0) {
-      sum -= magnitudes[left - 1]
-    }
-
-    const actualLeft = Math.max(0, left)
-    const actualRight = Math.min(n - 1, right)
-    const count = actualRight - actualLeft + 1
-    envelope[i] = sum / count
-  }
-
-  // Fix: recompute properly since the running sum approach above is approximate
-  // for edge cases. Use a clean implementation.
   for (let i = 0; i < n; i++) {
     const left = Math.max(0, i - halfWidth)
     const right = Math.min(n - 1, i + halfWidth)
-    let s = 0
+    let sum = 0
     for (let j = left; j <= right; j++) {
-      s += magnitudes[j]
+      sum += magnitudes[j]
     }
-    envelope[i] = s / (right - left + 1)
+    envelope[i] = sum / (right - left + 1)
   }
 
   return envelope
@@ -216,6 +191,7 @@ interface TrackedPeak {
 function trackPeaks(
   allFramePeaks: PeakInfo[][],
   minFrames: number,
+  retireGapFrames: number,
 ): TrackedPeak[] {
   const tracked: TrackedPeak[] = []
   const active: TrackedPeak[] = []
@@ -266,9 +242,9 @@ function trackPeaks(
       }
     }
 
-    // Retire active peaks that haven't been matched for a while
+    // Retire active peaks that haven't been matched within the gap window
     for (let a = active.length - 1; a >= 0; a--) {
-      if (frame - active[a].lastFrame > 5) {
+      if (frame - active[a].lastFrame > retireGapFrames) {
         if (active[a].frameCount >= minFrames) {
           tracked.push(active[a])
         }
@@ -321,6 +297,44 @@ function classifyPeak(
   return 'resonance'
 }
 
+/**
+ * Merge tracked peaks that are at similar frequencies into consolidated regions.
+ * This collapses the many short-lived peaks at the same frequency into fewer,
+ * more meaningful regions.
+ */
+function mergeTrackedPeaks(peaks: TrackedPeak[], secPerFrame: number): TrackedPeak[] {
+  if (peaks.length === 0) return []
+
+  // Sort by frequency
+  const sorted = [...peaks].sort((a, b) => a.frequency - b.frequency)
+  const merged: TrackedPeak[] = []
+  let current = { ...sorted[0], frameIndices: [...sorted[0].frameIndices] }
+
+  for (let i = 1; i < sorted.length; i++) {
+    const next = sorted[i]
+    const ratio = next.frequency / current.frequency
+    // Merge if within 1 semitone
+    if (Math.abs(Math.log2(ratio)) < Math.log2(Math.pow(2, 1 / 12))) {
+      // Merge: take weighted average frequency, sum frame counts, expand time range
+      const totalFrames = current.frameCount + next.frameCount
+      current.frequency = (current.frequency * current.frameCount + next.frequency * next.frameCount) / totalFrames
+      current.bandwidth = (current.bandwidth * current.frameCount + next.bandwidth * next.frameCount) / totalFrames
+      current.severitySum += next.severitySum
+      current.frameCount = totalFrames
+      current.peakSeverity = Math.max(current.peakSeverity, next.peakSeverity)
+      current.firstFrame = Math.min(current.firstFrame, next.firstFrame)
+      current.lastFrame = Math.max(current.lastFrame, next.lastFrame)
+      current.frameIndices.push(...next.frameIndices)
+    } else {
+      merged.push(current)
+      current = { ...next, frameIndices: [...next.frameIndices] }
+    }
+  }
+  merged.push(current)
+
+  return merged
+}
+
 // ---------------------------------------------------------------------------
 // Main function
 // ---------------------------------------------------------------------------
@@ -358,9 +372,11 @@ export async function detectHarshness(
     if (frequencies[i] >= 8000) { highBin = i; break }
   }
 
-  // Envelope half-width: ~200Hz worth of bins
+  // Envelope half-width: ~1kHz worth of bins (~1/3 octave at 3kHz)
+  // Wide enough to smooth over harmonic structure in tonal signals (vocals, guitars)
+  // so only true resonant peaks protrude above the envelope.
   const binSpacing = frequencies[1] - frequencies[0]
-  const envelopeHalfWidth = Math.max(1, Math.round(200 / binSpacing))
+  const envelopeHalfWidth = Math.max(1, Math.round(1000 / binSpacing))
 
   // Per-frame peak detection
   const allFramePeaks: PeakInfo[][] = []
@@ -389,8 +405,10 @@ export async function detectHarshness(
     }
   }
 
-  // Track peaks across frames
-  const trackedPeaks = trackPeaks(allFramePeaks, minFrames)
+  // Track peaks across frames, then merge nearby-frequency regions
+  const retireGapFrames = Math.max(10, Math.ceil(0.5 / secPerFrame)) // ~0.5s gap
+  const rawTracked = trackPeaks(allFramePeaks, minFrames, retireGapFrames)
+  const trackedPeaks = mergeTrackedPeaks(rawTracked, secPerFrame)
 
   // Convert to HarshRegion entries
   const regions: HarshRegion[] = trackedPeaks.map((peak) => ({
@@ -414,7 +432,7 @@ export async function detectHarshness(
       name: band.name,
       lowHz: band.lowHz,
       highHz: band.highHz,
-      score: Math.round(Math.min(100, ratio * 500)),
+      score: Math.round(Math.min(100, ratio * 100)),
     }
   })
 
@@ -429,12 +447,18 @@ export async function detectHarshness(
 
   // Generate EQ recommendations (up to 8 bands for EQ Eight)
   const eqRecommendations: EQFix[] = regions.slice(0, 8).map((region) => {
-    const q = region.bandwidth > 0 ? region.frequency / region.bandwidth : 4
-    const gain = Math.max(-6, -region.severity * 0.5)
+    // Use a minimum bandwidth of freq/12 (~Q=12) to avoid overly surgical cuts
+    // that can ring or sound unnatural
+    const effectiveBandwidth = Math.max(region.bandwidth, region.frequency / 12)
+    const q = effectiveBandwidth > 0 ? region.frequency / effectiveBandwidth : 4
     const mode: 'static' | 'dynamic' = region.type === 'resonance' ? 'static' : 'dynamic'
+    // Dynamic regions get a more conservative cut since EQ Eight only does static —
+    // a full static cut on sibilance would dull the signal between sibilant moments
+    const gainMultiplier = mode === 'dynamic' ? 0.3 : 0.5
+    const gain = Math.max(-6, -region.severity * gainMultiplier)
 
     const typeLabel =
-      region.type === 'sibilance' ? 'sibilant peak' :
+      region.type === 'sibilance' ? 'sibilant peak (consider de-esser for better results)' :
       region.type === 'buildup' ? 'building resonance' :
       'static resonance'
 

@@ -14,7 +14,7 @@ Audio is loaded via ffmpeg (`loadAudio`) and transformed using `stft()` with def
 
 ### 2. Local Spectral Envelope
 
-For each frame, a moving average is computed across frequency bins with a half-width of ~200Hz (~19 bins at default settings). This creates a smooth local envelope that represents the "expected" spectral shape.
+For each frame, a moving average is computed across frequency bins with a half-width of ~1kHz (~93 bins at default settings). This wide window smooths over harmonic structure in tonal signals (vocals, guitars) so that only true resonant peaks — not individual harmonics — protrude above the envelope.
 
 ### 3. Peak Detection
 
@@ -33,7 +33,11 @@ Peaks across frames are linked if their frequencies are within 1 semitone. Track
 - Total and peak severity
 - Frame count and time range
 
-Peaks that aren't matched for 5+ frames are retired. Only peaks lasting longer than `minDurationSec` (default 50ms) are kept.
+Peaks that aren't matched for ~0.5s are retired. Only peaks lasting longer than `minDurationSec` (default 50ms) are kept.
+
+### 4b. Frequency Merging
+
+After temporal tracking, peaks at similar frequencies (within 1 semitone) are merged across the full timeline. This consolidates the many short-lived peaks at the same frequency into fewer, more meaningful regions with accumulated frame counts and expanded time ranges.
 
 ### 5. Classification
 
@@ -52,9 +56,9 @@ The overall score is a weighted average across bands, with the presence band (3-
 For each detected region (up to 8):
 - **Frequency**: Center of the detected peak
 - **EQ8 value**: `hzToEQ8(frequency)` for direct Ableton parameter setting
-- **Gain**: `-severity * 0.5`, capped at -6dB (conservative)
-- **Q**: `frequency / bandwidth`, capped at 18 (EQ Eight's practical max)
-- **Mode**: `static` for resonances, `dynamic` for sibilance/buildup
+- **Gain**: `-severity * 0.5` for static, `-severity * 0.3` for dynamic (more conservative since EQ Eight only does static cuts), capped at -6dB
+- **Q**: `frequency / bandwidth`, minimum bandwidth of `freq/12` to avoid overly surgical cuts, capped at 12
+- **Mode**: `static` for resonances, `dynamic` for sibilance/buildup (advisory — EQ Eight applies static cuts; for dynamic regions, consider a de-esser)
 
 ## Psychoacoustic Basis
 
