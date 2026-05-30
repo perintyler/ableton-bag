@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- verbose diagnostic output guarded by flag */
 import { exec, requireCmd } from './exec.js'
 import { stftComplex, istft, hannWindow } from './dsp.js'
 import { mkdir } from 'node:fs/promises'

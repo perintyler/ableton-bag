@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- test diagnostic output */
 import { describe, it, expect, beforeAll } from 'vitest'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
