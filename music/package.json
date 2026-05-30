@@ -16,7 +16,8 @@
     "./similarity": "./src/similarity.ts",
     "./eq-mapping": "./src/eq-mapping.ts",
     "./dsp": "./src/dsp.ts",
-    "./health": "./src/health.ts"
+    "./health": "./src/health.ts",
+    "./harshness": "./src/harshness.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

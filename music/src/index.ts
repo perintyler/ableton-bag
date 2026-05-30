@@ -121,3 +121,12 @@ export {
   checkHealth,
   type HealthCheckResult,
 } from './health.js'
+
+export {
+  detectHarshness,
+  type HarshnessSummary,
+  type HarshRegion,
+  type HarshnessBand,
+  type EQFix,
+  type HarshnessOptions,
+} from './harshness.js'
