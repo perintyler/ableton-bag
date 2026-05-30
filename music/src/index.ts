@@ -130,3 +130,13 @@ export {
   type EQFix,
   type HarshnessOptions,
 } from './harshness.js'
+
+export {
+  detectClashes,
+  type ClashSource,
+  type ClashOptions,
+  type ClashRegion,
+  type ClashFix,
+  type ClashSummary,
+  type SourceProfile,
+} from './clash.js'

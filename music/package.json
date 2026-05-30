@@ -18,7 +18,8 @@
     "./eq-mapping": "./src/eq-mapping.ts",
     "./dsp": "./src/dsp.ts",
     "./health": "./src/health.ts",
-    "./harshness": "./src/harshness.ts"
+    "./harshness": "./src/harshness.ts",
+    "./clash": "./src/clash.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
