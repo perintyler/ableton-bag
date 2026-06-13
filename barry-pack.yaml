@@ -1,0 +1,5 @@
+name: ableton
+description: Ableton Live session control, MIDI sequencing, audio analysis, and mixing tools
+
+server:
+  entry: server.ts
