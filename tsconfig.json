@@ -5,7 +5,9 @@
     "moduleResolution": "NodeNext",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "noEmit": true
   },
-  "include": ["*.ts"]
+  "include": ["*.ts", "src/**/*.ts"],
+  "exclude": ["node_modules"]
 }
