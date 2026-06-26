@@ -1,5 +1,5 @@
 /* eslint-disable no-console -- verbose diagnostic output guarded by flag */
-import { exec, requireCmd } from './exec.js'
+import { exec, execBuffer, requireCmd } from './exec.js'
 import { stftComplex, istft, hannWindow } from './dsp.js'
 import { mkdir } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
@@ -64,48 +64,31 @@ function findModelPath(override?: string): string {
 async function loadStereoAudio(filePath: string, sr: number): Promise<{ left: Float64Array; right: Float64Array; numSamples: number }> {
   await requireCmd('ffmpeg')
 
-  const { execFile } = await import('node:child_process')
+  const buffer = await execBuffer('ffmpeg', [
+    '-i', filePath,
+    '-f', 'f32le',
+    '-acodec', 'pcm_f32le',
+    '-ac', '2',
+    '-ar', String(sr),
+    'pipe:1',
+  ])
 
-  return new Promise((resolve, reject) => {
-    const proc = execFile(
-      'ffmpeg',
-      [
-        '-i', filePath,
-        '-f', 'f32le',
-        '-acodec', 'pcm_f32le',
-        '-ac', '2',
-        '-ar', String(sr),
-        'pipe:1',
-      ],
-      {
-        maxBuffer: 500 * 1024 * 1024,
-        encoding: 'buffer' as any,
-      },
-      (error, stdout) => {
-        if (error) {
-          reject(new Error(`ffmpeg failed to load ${filePath}: ${error.message}`))
-          return
-        }
-        const buffer = stdout as unknown as Buffer
-        const float32 = new Float32Array(
-          buffer.buffer,
-          buffer.byteOffset,
-          buffer.byteLength / 4
-        )
+  const float32 = new Float32Array(
+    buffer.buffer,
+    buffer.byteOffset,
+    buffer.byteLength / 4
+  )
 
-        // Deinterleave stereo: [L, R, L, R, ...] -> separate channels
-        const numSamples = float32.length / 2
-        const left = new Float64Array(numSamples)
-        const right = new Float64Array(numSamples)
-        for (let i = 0; i < numSamples; i++) {
-          left[i] = float32[2 * i]
-          right[i] = float32[2 * i + 1]
-        }
+  // Deinterleave stereo: [L, R, L, R, ...] -> separate channels
+  const numSamples = float32.length / 2
+  const left = new Float64Array(numSamples)
+  const right = new Float64Array(numSamples)
+  for (let i = 0; i < numSamples; i++) {
+    left[i] = float32[2 * i]
+    right[i] = float32[2 * i + 1]
+  }
 
-        resolve({ left, right, numSamples })
-      }
-    )
-  })
+  return { left, right, numSamples }
 }
 
 /**

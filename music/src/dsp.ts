@@ -5,7 +5,7 @@
  * with no external dependencies beyond Node's child_process (for ffmpeg audio loading).
  */
 
-import { exec, requireCmd } from './exec.js'
+import { exec, execBuffer, requireCmd } from './exec.js'
 
 // ---------------------------------------------------------------------------
 // Window Functions
@@ -688,39 +688,22 @@ export async function loadAudio(
 ): Promise<{ samples: Float64Array; sampleRate: number }> {
   await requireCmd('ffmpeg')
 
-  const { execFile } = await import('node:child_process')
+  const buffer = await execBuffer('ffmpeg', [
+    '-i', filePath,
+    '-f', 'f64le',
+    '-acodec', 'pcm_f64le',
+    '-ac', '1',
+    '-ar', String(sr),
+    'pipe:1',
+  ])
 
-  return new Promise((resolve, reject) => {
-    const proc = execFile(
-      'ffmpeg',
-      [
-        '-i', filePath,
-        '-f', 'f64le',
-        '-acodec', 'pcm_f64le',
-        '-ac', '1',
-        '-ar', String(sr),
-        'pipe:1',
-      ],
-      {
-        maxBuffer: 500 * 1024 * 1024,
-        encoding: 'buffer' as any,
-      },
-      (error, stdout) => {
-        if (error) {
-          reject(new Error(`ffmpeg failed to load ${filePath}: ${error.message}`))
-          return
-        }
-        const buffer = stdout as unknown as Buffer
-        const float64 = new Float64Array(
-          buffer.buffer,
-          buffer.byteOffset,
-          buffer.byteLength / 8
-        )
-        // Copy to ensure ownership (the buffer may be shared)
-        const samples = new Float64Array(float64.length)
-        samples.set(float64)
-        resolve({ samples, sampleRate: sr })
-      }
-    )
-  })
+  const float64 = new Float64Array(
+    buffer.buffer,
+    buffer.byteOffset,
+    buffer.byteLength / 8
+  )
+  // Copy to ensure ownership (the buffer may be shared)
+  const samples = new Float64Array(float64.length)
+  samples.set(float64)
+  return { samples, sampleRate: sr }
 }

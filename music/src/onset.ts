@@ -1,5 +1,4 @@
-import { exec, requireCmd } from './exec.js'
-import { execFile } from 'node:child_process'
+import { exec, execBuffer, requireCmd } from './exec.js'
 
 export interface Onset {
   /** Time in seconds */
@@ -32,32 +31,15 @@ export async function detectOnsets(
   const minInterval = options?.minimumInterval ?? 0.03
 
   // Use ffmpeg to extract raw PCM samples for analysis.
-  // Must use execFile with encoding: 'buffer' to get raw binary PCM data.
-  // Using exec() returns stdout as UTF-8 string, which corrupts binary data.
-  const buffer = await new Promise<Buffer>((resolve, reject) => {
-    execFile(
-      'ffmpeg',
-      [
-        '-i', filePath,
-        '-ac', '1',
-        '-ar', '8000', // downsample for faster analysis
-        '-f', 'f32le',
-        '-v', 'quiet',
-        'pipe:1',
-      ],
-      {
-        maxBuffer: 100 * 1024 * 1024,
-        encoding: 'buffer' as any,
-      },
-      (error, stdout) => {
-        if (error) {
-          reject(new Error(`ffmpeg failed to decode ${filePath}: ${error.message}`))
-          return
-        }
-        resolve(stdout as unknown as Buffer)
-      }
-    )
-  })
+  // Must use execBuffer to get raw binary PCM data (not UTF-8 string).
+  const buffer = await execBuffer('ffmpeg', [
+    '-i', filePath,
+    '-ac', '1',
+    '-ar', '8000', // downsample for faster analysis
+    '-f', 'f32le',
+    '-v', 'quiet',
+    'pipe:1',
+  ], { maxBuffer: 100 * 1024 * 1024 })
 
   const samples = new Float32Array(
     buffer.buffer,

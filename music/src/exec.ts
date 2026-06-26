@@ -14,6 +14,35 @@ export async function exec(
   })
 }
 
+/**
+ * Execute a command and return stdout as a Buffer (for binary data like raw PCM).
+ * Node's execFile with encoding:'buffer' returns Buffer but TS types don't reflect this.
+ */
+export function execBuffer(
+  cmd: string,
+  args: string[],
+  options?: { maxBuffer?: number }
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      cmd,
+      args,
+      {
+        maxBuffer: options?.maxBuffer ?? 500 * 1024 * 1024,
+        encoding: 'buffer' as BufferEncoding,
+      },
+      (error, stdout: string | Buffer) => {
+        if (error) {
+          reject(error)
+          return
+        }
+        // encoding: 'buffer' makes stdout a Buffer at runtime despite TS typing it as string
+        resolve(Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout))
+      }
+    )
+  })
+}
+
 export async function which(cmd: string): Promise<string | null> {
   try {
     const { stdout } = await exec('which', [cmd])
