@@ -2,6 +2,7 @@ packages:
   - music
 
 onlyBuiltDependencies:
+  - core-js
   - core-js-pure
   - esbuild
   - onnxruntime-node
