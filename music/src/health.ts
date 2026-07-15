@@ -49,7 +49,7 @@ export async function checkHealth(): Promise<HealthCheckResult> {
   if (!basicPitchModel) {
     errors.push(
       'basic-pitch ONNX model (nmp.onnx) not found. Searched:\n' +
-        '  - packages/music/models/basic-pitch-nmp.onnx\n' +
+        '  - music/models/basic-pitch-nmp.onnx\n' +
         '  - ~/audio-tools-venv/lib/python3.{11,12,13}/site-packages/basic_pitch/saved_models/icassp_2022/nmp.onnx'
     )
   }
@@ -59,7 +59,7 @@ export async function checkHealth(): Promise<HealthCheckResult> {
   if (!htdemucsModel) {
     errors.push(
       'htdemucs.onnx model not found. Searched:\n' +
-        '  - packages/music/models/htdemucs.onnx\n' +
+        '  - music/models/htdemucs.onnx\n' +
         '  - ~/.cache/demucs/htdemucs.onnx\n' +
         '  - ~/models/htdemucs.onnx'
     )

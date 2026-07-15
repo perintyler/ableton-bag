@@ -30,10 +30,10 @@ Require ffmpeg installed:
 
 ```bash
 # Unit tests (pure TS, no external deps)
-cd packages/music && pnpm test
+cd music && pnpm test
 
 # Typecheck
-cd packages/music && pnpm typecheck
+cd music && pnpm typecheck
 ```
 
 ## What to Test

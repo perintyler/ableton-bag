@@ -70,7 +70,7 @@ function msToFrames(ms: number): number {
 /**
  * Find the ONNX model file. Search order:
  *   1. Explicit path via options.onnxModelPath
- *   2. Bundled model at packages/music/models/basic-pitch-nmp.onnx
+ *   2. Bundled model at music/models/basic-pitch-nmp.onnx
  *   3. Python venv fallback at ~/audio-tools-venv/.../nmp.onnx
  */
 function findOnnxModel(explicit?: string): string {
@@ -99,7 +99,7 @@ function findOnnxModel(explicit?: string): string {
 
   throw new Error(
     'basic-pitch ONNX model not found. Copy the model to the package:\n' +
-    '  cp ~/audio-tools-venv/lib/python3.13/site-packages/basic_pitch/saved_models/icassp_2022/nmp.onnx packages/music/models/basic-pitch-nmp.onnx\n' +
+    '  cp ~/audio-tools-venv/lib/python3.13/site-packages/basic_pitch/saved_models/icassp_2022/nmp.onnx music/models/basic-pitch-nmp.onnx\n' +
     'Or pass options.onnxModelPath explicitly.\n' +
     `Searched: ${bundledPath}, ${venvCandidates.join(', ')}`
   )
