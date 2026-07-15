@@ -1,14 +1,14 @@
 {
-  "name": "@barry-packs/ableton",
+  "name": "@barry/ableton",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && pnpm --dir music typecheck"
   },
   "dependencies": {
     "@barry/music": "workspace:*",
-    "@barry/tools": "workspace:*",
     "ableton-js": "^4.1.0",
     "zod": "3.25.76"
   },
@@ -16,6 +16,7 @@
     "@types/node": "22.15.0",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
-    "vitest": "4.0.18"
-  }
+    "vitest": "4.1.0"
+  },
+  "packageManager": "pnpm@10.30.3"
 }

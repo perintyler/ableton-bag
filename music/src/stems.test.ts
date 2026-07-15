@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- test diagnostic output */
 import { describe, it, expect, beforeAll } from 'vitest'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -97,9 +96,6 @@ describe('demucs ONNX model', () => {
 
     // Should have input names
     expect(session.inputNames.length).toBeGreaterThanOrEqual(1)
-    console.log('Input names:', session.inputNames)
-    console.log('Output names:', session.outputNames)
-
     // Should have at least 1 output (typically 4 stems or combined)
     expect(session.outputNames.length).toBeGreaterThanOrEqual(1)
   }, 30_000)

@@ -1,5 +1,7 @@
 src/*.js
 dist/
+node_modules/
+*.tsbuildinfo
 
 # ONNX models are too large for git (~30MB); see models/.gitkeep for download instructions
 *.onnx

@@ -1,4 +1,4 @@
-import { defineTool } from "@barry/tools";
+import { defineTool } from "./define-tool.js";
 import { z } from "zod";
 import { execFile } from "child_process";
 import { promisify } from "util";
