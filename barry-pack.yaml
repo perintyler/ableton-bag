@@ -4,3 +4,8 @@ description: Ableton Live session control, MIDI sequencing, audio analysis, and 
 
 tools:
   entry: tools.ts
+
+dependencies:
+  - name: cliclick
+    install: brew install cliclick
+    reason: performs mouse clicks for Live UI automation
