@@ -9,3 +9,96 @@ dependencies:
   - name: cliclick
     install: brew install cliclick
     reason: performs mouse clicks for Live UI automation
+
+# Nouns mirror Ableton's Live Object Model primitives and their composition:
+#   Note → Clip → Scene/Arrangement; Track holds Clips + Devices + Automation;
+#   Device → Parameters; Parameter is the universal automatable/mappable value.
+# Verbs mirror real production workflows. (Nouns without tools today, e.g.
+# Scene/Automation, are omitted until the pack exposes tools for them.)
+verbs:
+  compose:
+    synonyms: [write, sequence, program, beatmake, draw-notes]
+    instruction: >-
+      Create MIDI clips and write note data (pitch, velocity, duration, start).
+      Build melodies, chords, basslines, and drums inside clips.
+  arrange:
+    synonyms: [structure, lay-out, build-arrangement]
+    instruction: >-
+      Assemble the linear song on the Arrangement timeline — place and
+      duplicate clips into sections (intro / verse / chorus / drop).
+  sound-design:
+    synonyms: [synthesize, patch, dial-in, tweak-devices]
+    instruction: >-
+      Craft timbres by loading instruments/effects from the browser and
+      adjusting their Parameters. Build device chains.
+  mix:
+    synonyms: [balance, level, gain-stage, mixdown]
+    instruction: >-
+      Balance tracks via levels, pan, sends, EQ, and compression. Analyze
+      timbres for clashes/harshness and set up mix-bus processing.
+  perform:
+    synonyms: [play-live, launch, jam, improvise]
+    instruction: >-
+      Trigger clips and scenes non-linearly in Session view. Fire clips,
+      stop clips, and control transport.
+  warp:
+    synonyms: [time-stretch, beatmatch, sync-to-grid, quantize-audio]
+    instruction: >-
+      Time-stretch audio clips so transients align to the project tempo/grid.
+      Set clip warping and tempo.
+
+nouns:
+  song:
+    synonyms: [set, live-set, project, session, transport]
+    description: >-
+      The root Live Set — the whole project. Holds tracks, scenes, tempo, and
+      playback/transport state.
+    getters: [ableton_status, ableton_get_session_info]
+    setters: [start_playback, stop_playback, stop_all_clips, set_tempo, undo]
+  tracks:
+    synonyms: [track, channel, bus, midi-track, audio-track]
+    description: >-
+      A channel strip (MIDI/audio/return/master) holding clips, a device
+      chain, and a mixer. Composes into the Song.
+    getters: [get_track_info, list_devices]
+    setters: [create_midi_track, create_audio_track, set_track_name, delete_track, set_track_mute, set_track_solo, set_track_arm]
+    skills: [mixing]
+  clips:
+    synonyms: [clip, pattern, region, midi-clip, audio-clip]
+    description: >-
+      A piece of MIDI or audio material. Session clips live in slots (launched
+      non-linearly); Arrangement clips sit at a fixed timeline position. MIDI
+      clips contain Notes.
+    getters: [list_arrangement_clips, get_arrangement_clip_info]
+    setters: [create_clip, set_clip_name, fire_clip, stop_clip, delete_clip_from_slot, create_arrangement_clip, duplicate_clip_to_arrangement, create_audio_arrangement_clip, set_clip_warping]
+  notes:
+    synonyms: [note, midi-note, pitch, velocity]
+    description: >-
+      A single MIDI note event inside a MIDI clip (pitch, start, duration,
+      velocity). The lowest compositional primitive; composes into Clips.
+    setters: [add_notes_to_clip, add_notes_to_arrangement_clip]
+  devices:
+    synonyms: [device, instrument, effect, plugin, rack]
+    description: >-
+      A MIDI/audio device (instrument or effect) in a track's chain, loaded
+      from the browser. Exposes Parameters. Composes into a device chain.
+    getters: [list_devices, get_browser_categories, get_browser_items, list_loadable_items]
+    setters: [load_browser_item, delete_device, setup_drum_processing, setup_mix_bus]
+    skills: [effects-chain]
+  parameters:
+    synonyms: [parameter, param, knob, macro, control, automatable]
+    description: >-
+      The universal automatable/mappable/modulatable value — every device
+      knob, mixer control, and rack macro is a Parameter. The single primitive
+      that automation, MIDI-mapping, and modulation all bind to.
+    getters: [list_device_parameters, get_device_parameters]
+    setters: [set_device_parameter]
+  sound:
+    synonyms: [timbre, tone, sonic-character, spectrum]
+    description: >-
+      The analyzed sonic character of tracks (spectral features). Used to
+      detect clashes/harshness and match timbres across tracks — an analysis
+      lens over tracks/clips, not a raw LOM object.
+    getters: [analyze_track_timbre, compare_timbres, detect_track_clashes, detect_and_fix_harshness, analyze_drum_features, match_timbre_to_track]
+    setters: [extract_and_load_drums]
+    skills: [mixing, effects-chain]
