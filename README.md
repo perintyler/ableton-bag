@@ -1,4 +1,4 @@
-# Ableton (Barry Pack)
+# Ableton (Barry bag)
 
 Ableton Live session control, MIDI sequencing, audio analysis, and mixing tools.
 

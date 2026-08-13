@@ -59,7 +59,7 @@ Each source's 29-band energy profile sums to 1.0. This means:
 
 ## Limitations
 
-- **Static analysis**: Analyzes the entire file as one block — doesn't detect clashes that only occur in certain sections
+- **Static analysis**: Analyzes the entire file as one bag — doesn't detect clashes that only occur in certain sections
 - **No phase awareness**: Only looks at magnitude, not phase relationships (phase cancellation is a different problem)
 - **Mono analysis**: Stereo sources are downmixed to mono for analysis — doesn't consider L/R panning separation
 - **No perceptual weighting**: All bands are treated equally (no A-weighting or loudness curves)

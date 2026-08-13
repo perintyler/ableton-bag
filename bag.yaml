@@ -1,4 +1,3 @@
-manifestVersion: 1
 name: ableton
 description: Ableton Live session control, MIDI sequencing, audio analysis, and mixing tools
 
@@ -14,7 +13,7 @@ dependencies:
 #   Note → Clip → Scene/Arrangement; Track holds Clips + Devices + Automation;
 #   Device → Parameters; Parameter is the universal automatable/mappable value.
 # Verbs mirror real production workflows. (Nouns without tools today, e.g.
-# Scene/Automation, are omitted until the block exposes tools for them.)
+# Scene/Automation, are omitted until the bag exposes tools for them.)
 verbs:
   compose:
     synonyms: [write, sequence, program, beatmake, draw-notes]

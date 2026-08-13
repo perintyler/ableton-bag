@@ -31,7 +31,7 @@ function saveTestWav(samples: Float64Array, sr: number, filePath: string): void 
   buffer.writeUInt16LE(1, offset); offset += 2           // mono
   buffer.writeUInt32LE(sr, offset); offset += 4          // sample rate
   buffer.writeUInt32LE(sr * bytesPerSample, offset); offset += 4  // byte rate
-  buffer.writeUInt16LE(bytesPerSample, offset); offset += 2      // block align
+  buffer.writeUInt16LE(bytesPerSample, offset); offset += 2      // bag align
   buffer.writeUInt16LE(bitsPerSample, offset); offset += 2       // bits per sample
 
   // data sub-chunk
