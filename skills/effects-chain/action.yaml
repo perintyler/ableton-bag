@@ -1,6 +1,6 @@
 version: 1
 name: effects-chain
-description: "TODO: describe effects-chain"
+description: Build and order Ableton Live device chains — standard mixing chain order, signal flow, and which effect belongs where. Use when adding effects to a track or fixing a processing chain.
 prompt: |-
   # Ableton Effects Chain Management
 
