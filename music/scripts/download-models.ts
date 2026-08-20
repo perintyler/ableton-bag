@@ -24,7 +24,7 @@ const MODELS: ModelSpec[] = [
   {
     name: 'basic-pitch',
     filename: 'basic-pitch-nmp.onnx',
-    url: 'https://huggingface.co/spotify/basic-pitch/resolve/main/saved_models/icassp_2022/nmp.onnx',
+    url: 'https://huggingface.co/daserge/basic-pitch-onnx/resolve/main/nmp.onnx',
     sizeMB: 0.2,
   },
   {
