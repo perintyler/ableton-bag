@@ -4,7 +4,8 @@
  * Runs automatically via postinstall, or manually: pnpm run download-models
  */
 
-import { existsSync, mkdirSync, createWriteStream } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, createWriteStream, readFileSync, unlinkSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { get } from 'node:https'
@@ -18,6 +19,8 @@ interface ModelSpec {
   filename: string
   url: string
   sizeMB: number
+  /** sha256 of the expected file. Third-party mirrors can change bytes; this pins them. */
+  sha256: string
 }
 
 const MODELS: ModelSpec[] = [
@@ -26,12 +29,14 @@ const MODELS: ModelSpec[] = [
     filename: 'basic-pitch-nmp.onnx',
     url: 'https://huggingface.co/daserge/basic-pitch-onnx/resolve/main/nmp.onnx',
     sizeMB: 0.2,
+    sha256: '2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec',
   },
   {
     name: 'htdemucs',
     filename: 'htdemucs.onnx',
     url: 'https://huggingface.co/MrCitron/demucs-v4-onnx/resolve/main/htdemucs.onnx',
     sizeMB: 303,
+    sha256: '7ed6e26883845a16a6d170069a4ff99b8410c2a64d0a2570ed0eb852eea234a2',
   },
 ]
 
@@ -76,13 +81,27 @@ async function downloadFile(url: string, dest: string, sizeMB: number): Promise<
   })
 }
 
+/**
+ * sha256 of a file on disk.
+ *
+ * The models come from community mirrors — the original Spotify URL for
+ * basic-pitch went dead and its HuggingFace repo now holds only a README — so
+ * the bytes are pinned rather than trusted. The basic-pitch hash was confirmed
+ * identical across two independent mirrors before being pinned here.
+ */
+function sha256File(path: string): string {
+  return createHash('sha256').update(readFileSync(path)).digest('hex')
+}
+
 async function main() {
   mkdirSync(modelsDir, { recursive: true })
 
+  // Present AND intact — an existence-only check let a corrupted or
+  // mirror-substituted file short-circuit verification entirely.
   let allPresent = true
   for (const model of MODELS) {
     const dest = join(modelsDir, model.filename)
-    if (!existsSync(dest)) {
+    if (!existsSync(dest) || sha256File(dest) !== model.sha256) {
       allPresent = false
       break
     }
@@ -98,13 +117,27 @@ async function main() {
   for (const model of MODELS) {
     const dest = join(modelsDir, model.filename)
     if (existsSync(dest)) {
-      console.log(`  ${model.name} (${model.filename}) — already downloaded`)
-      continue
+      const have = sha256File(dest)
+      if (have === model.sha256) {
+        console.log(`  ${model.name} (${model.filename}) — already downloaded`)
+        continue
+      }
+      console.error(`  ${model.name}: checksum mismatch on disk, re-downloading`)
+      console.error(`    expected ${model.sha256}`)
+      console.error(`    found    ${have}`)
+      unlinkSync(dest)
     }
 
     console.log(`  ${model.name} (${model.sizeMB} MB)...`)
     try {
       await downloadFile(model.url, dest, model.sizeMB)
+      const got = sha256File(dest)
+      if (got !== model.sha256) {
+        unlinkSync(dest)
+        throw new Error(
+          `checksum mismatch (expected ${model.sha256}, got ${got}) — the mirror served different bytes`,
+        )
+      }
     } catch (err) {
       console.error(`  Failed to download ${model.name}: ${(err as Error).message}`)
       console.error(`    Manual download: curl -L -o ${dest} ${model.url}`)
