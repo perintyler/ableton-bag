@@ -9,6 +9,13 @@ dependencies:
     install: brew install cliclick
     reason: performs mouse clicks for Live UI automation
 
+permissions:
+  - kind: automation
+    app: System Events
+    reason: brings Live to the front, sends its keystrokes and reads its windows
+  - kind: accessibility
+    reason: System Events keystrokes and cliclick's mouse clicks drive Live's UI
+
 # Nouns mirror Ableton's Live Object Model primitives and their composition:
 #   Note → Clip → Scene/Arrangement; Track holds Clips + Devices + Automation;
 #   Device → Parameters; Parameter is the universal automatable/mappable value.
